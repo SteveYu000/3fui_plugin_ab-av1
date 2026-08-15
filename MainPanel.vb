@@ -246,9 +246,12 @@ Public NotInheritable Class MainPanel
             .Padding = New Padding(0, 10, 0, 10),
             .BackColor = Color.Transparent
         }
-        For index = 0 To 5
-            layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 16.6667F))
-        Next
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 13.0F)) '目标 VMAF
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 13.0F)) '最小 CRF
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 13.0F)) '最大 CRF
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 25.0F)) '采样数量
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 16.0F)) '单段时长
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 20.0F)) '彻底搜索
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 82))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 74))
@@ -871,19 +874,19 @@ Public NotInheritable Class MainPanel
                            item.State = SearchTaskState.Paused).ToList()
 
         If Not _running AndAlso _items.Any(Function(item) item.State = SearchTaskState.Pending) Then
-            AddTaskContextMenuItem("开始搜索等待任务", AddressOf StartQueue)
+            AddTaskContextMenuItem("开始搜索", AddressOf StartQueue)
         End If
 
         If activeTargets.Any(Function(item) item.State = SearchTaskState.Running) Then
-            AddTaskContextMenuItem("暂停所选运行任务", AddressOf PauseOrResumeTasks)
+            AddTaskContextMenuItem("暂停", AddressOf PauseOrResumeTasks)
         ElseIf activeTargets.Count > 0 Then
-            AddTaskContextMenuItem("恢复所选暂停任务", AddressOf PauseOrResumeTasks)
+            AddTaskContextMenuItem("恢复", AddressOf PauseOrResumeTasks)
         End If
 
         If targets.Any(Function(item) item.State = SearchTaskState.Pending OrElse
                                       item.State = SearchTaskState.Running OrElse
                                       item.State = SearchTaskState.Paused) Then
-            AddTaskContextMenuItem("停止所选任务", AddressOf StopTasks)
+            AddTaskContextMenuItem("停止", AddressOf StopTasks, danger:=True)
         End If
 
         Dim canReset = selected.Any(
@@ -902,10 +905,12 @@ Public NotInheritable Class MainPanel
         End If
     End Sub
 
-    Private Sub AddTaskContextMenuItem(text As String, handler As EventHandler)
+    Private Sub AddTaskContextMenuItem(text As String,
+                                       handler As EventHandler,
+                                       Optional danger As Boolean = False)
         Dim item As New ModernContextMenu.ModernMenuItem(text) With {
             .Font = Nothing,
-            .ForeColor = ColorText,
+            .ForeColor = If(danger, ColorDanger, ColorText),
             .CloseOnClick = True
         }
         AddHandler item.Click, handler

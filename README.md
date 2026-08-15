@@ -1,19 +1,15 @@
-# FFmpegFreeUI AB-AV1 自动 CRF 插件（官方 API 版）
+# FFmpegFreeUI AB-AV1 自动 CRF 插件
 
-本插件只使用 [FFmpegFreeUI](https://github.com/Lake1059/FFmpegFreeUI) 官方插件接口，在左侧添加 `AB-AV1` 页面。它读取 FFmpegFreeUI v6 预设，将影响画面质量的编码参数交给 `ab-av1 crf-search` 测试；找到目标 VMAF 对应的 CRF 后，仅替换预设中的 CRF，再把正式编码任务加入 3FUI 原生编码队列。
+本插件会读取 FFmpegFreeUI v6 预设，将影响画面质量的编码参数交给 `ab-av1 crf-search` 测试；找到目标 VMAF 对应的 CRF 后，仅替换预设中的 CRF，再把正式编码任务加入 3FUI 原生编码队列。
 
-当前版本：`0.4.1`。已按 FFmpegFreeUI `6.1.31` 源码中的官方加载器和回调签名验证。
+当前版本：`0.4.3`。已按 FFmpegFreeUI `6.1.31` 源码中的官方加载器和回调签名验证。
 
-![官方 API 任务管理界面](artifacts/official-api-task-queue.png)
+![官方 API 任务管理界面](./images/界面预览.png)
 
 ## 使用的官方接口
 
 - `SetHost_AddCustomWinformPanel`：注册左侧 `AB-AV1` 页面。
 - `SetHost_AddMissionToQueueWith3fuiFile`：用搜索完成后的临时 v6 预设加入 3FUI 原生编码队列。
-
-官方 API 暂时没有“控制原生队列任务”的写入接口。因此，页面里的开始、停止、暂停、移除和重置只管理 **ab-av1 搜索队列**；任务显示为“已入队”后，后续开始、暂停、停止和删除由 3FUI 原生编码队列负责。
-
-插件不引用修改版宿主、Ext SDK 或私有 3FUI 程序集。
 
 ## 安装
 
@@ -30,8 +26,6 @@ Plugin\
 3. 确保 `ffmpeg` 可通过 FFmpegFreeUI 的当前目录或系统 `PATH` 正常找到，并且该 FFmpeg 包含 `libvmaf`。
 4. 完全退出并重新启动 FFmpegFreeUI。左侧应出现 `AB-AV1`。
 
-插件只在自身 DLL 所在目录查找 `ab-av1.exe`，不会扫描其他目录，也不提供单独的 FFmpeg 路径设置。不要把旧版的 `FFmpegFreeUI.Ext.PluginHost.dll`、`FFmpegFreeUI.Ext.PluginSdk.dll` 或另一套 LakeUI/Vortice DLL 放入 `Plugin`。
-
 ## 基本流程
 
 1. 在 3FUI 中设置 `libsvtav1`、preset、像素格式、SVT 高级参数、音频、字幕、附件、章节、映射及输出容器，然后保存为 v6 JSON 预设。
@@ -39,8 +33,6 @@ Plugin\
 3. 设置目标 VMAF、CRF 范围、采样数量、单段时长、彻底搜索和 VMAF 模型。
 4. 点击“添加媒体”或直接把文件拖进页面；点击“开始搜索队列”。
 5. 每个搜索成功的任务会显示 CRF/VMAF/预测视频大小，并立即加入 3FUI 原生编码队列。
-
-运行期间仍可点击“添加媒体”或拖入文件，新文件会保持“等待”状态并由当前搜索队列继续处理。搜索按列表顺序单任务执行，避免同时运行多个 VMAF 搜索抢占资源。
 
 ## 搜索任务管理
 
@@ -103,11 +95,8 @@ tile-rows=0:film-grain=4:film-grain-denoise=1:sharpness=1:ac-bias=1
 ```powershell
 dotnet restore .\FFmpegFreeUI.AbAv1.vbproj
 dotnet build .\FFmpegFreeUI.AbAv1.vbproj -c Release --no-restore
-
-dotnet run --project .\tests\NativeIntegrationSmoke\NativeIntegrationSmoke.csproj -c Release
 ```
 
-Release 构建会生成 `dist\FFmpegFreeUI.AbAv1.3fui.dll`。烟雾测试验证官方加载器入口、官方入队回调、预设映射、当前 FFmpeg 的 VMAF 扫描、暂停/恢复/停止进程树、CRF 结果解析和 LakeUI 页面渲染。
 
 ## 当前限制
 
@@ -119,4 +108,4 @@ Release 构建会生成 `dist\FFmpegFreeUI.AbAv1.3fui.dll`。烟雾测试验证�
 
 ## 许可证
 
-项目当前按 `GPL-3.0-only` 配置，因为所引用的 LakeUI 3.16.0 NuGet 包声明该许可证。若你的 LakeUI 赞助/商业许可明确授予其他发布权利，应以该许可文本为准，再决定是否调整本项目许可证；本仓库不替授权合同作额外解释。
+项目当前采用 MIT 许可证，但其所引用的 LakeUI 包要求社区版本采用 `GPL 3.0 only` 许可，作者已购买赞助者许可，因此采用了 MIT 许可证发布。若你的 LakeUI 采用了其他许可，应以该许可文本为准，再决定是否调整本项目许可证；本仓库不替授权合同作额外解释。

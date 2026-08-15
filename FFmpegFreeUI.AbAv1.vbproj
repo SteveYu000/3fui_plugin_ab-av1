@@ -16,15 +16,14 @@
     <DebugType>embedded</DebugType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <Version>0.4.1</Version>
-    <Authors>FFmpegFreeUI AB-AV1 Plugin Contributors</Authors>
+    <Version>0.4.3</Version>
+    <Authors>Github @SteveYu000</Authors>
     <Description>通过 FFmpegFreeUI 官方插件 API 集成 ab-av1 自动 CRF 搜索与任务队列。</Description>
-    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="obj-native\**\*.vb" />
-    <Compile Remove="tests\**\*.vb" />
   </ItemGroup>
 
   <ItemGroup>
