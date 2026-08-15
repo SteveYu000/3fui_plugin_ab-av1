@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- 官方加载器按“程序集名称 + .Entry”定位入口；文件仅在发布时改为 .3fui.dll。 -->
+    <AssemblyName>FFmpegFreeUI.AbAv1</AssemblyName>
+    <RootNamespace>FFmpegFreeUI.AbAv1</RootNamespace>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+    <OptionStrict>On</OptionStrict>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>embedded</DebugType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <Version>0.4.1</Version>
+    <Authors>FFmpegFreeUI AB-AV1 Plugin Contributors</Authors>
+    <Description>通过 FFmpegFreeUI 官方插件 API 集成 ab-av1 自动 CRF 搜索与任务队列。</Description>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="obj-native\**\*.vb" />
+    <Compile Remove="tests\**\*.vb" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LakeUI" Version="3.16.0" />
+  </ItemGroup>
+
+  <Target Name="CreatePluginArtifact" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <MakeDir Directories="$(MSBuildProjectDirectory)\dist" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(MSBuildProjectDirectory)\dist\$(AssemblyName).3fui.dll" />
+  </Target>
+
+</Project>
