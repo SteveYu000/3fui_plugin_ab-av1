@@ -92,9 +92,23 @@ Public NotInheritable Class PresetProfile
         If Not File.Exists(inputPath) Then Throw New FileNotFoundException("找不到输入文件。", inputPath)
         settings.Validate()
 
+        Return BuildSearchArgumentsCore(Path.GetFullPath(inputPath), settings, jsonOutput)
+    End Function
+
+    ''' <summary>生成使用输入文件占位符的命令行参数模板。</summary>
+    Public Function BuildSearchArgumentTemplate(settings As SearchSettings,
+                                                Optional jsonOutput As Boolean = False) As List(Of String)
+        settings.Validate()
+        Return BuildSearchArgumentsCore("<输入文件>", settings, jsonOutput)
+    End Function
+
+    Private Function BuildSearchArgumentsCore(inputArgument As String,
+                                               settings As SearchSettings,
+                                               jsonOutput As Boolean) As List(Of String)
+
         Dim arguments As New List(Of String) From {
             "crf-search",
-            "--input", Path.GetFullPath(inputPath),
+            "--input", inputArgument,
             "--encoder", Encoder
         }
 

@@ -28,6 +28,7 @@ Public NotInheritable Class AbAv1Runner
 
     Private ReadOnly _processLock As New Object()
     Private _currentProcess As Process
+    Private _currentCommandLine As String = String.Empty
     Private _suspendedProcessIds As IReadOnlyList(Of Integer) = Array.Empty(Of Integer)()
 
     Public ReadOnly Property HasActiveProcess As Boolean
@@ -42,6 +43,15 @@ Public NotInheritable Class AbAv1Runner
         Get
             SyncLock _processLock
                 Return _suspendedProcessIds.Count > 0
+            End SyncLock
+        End Get
+    End Property
+
+    ''' <summary>最近一次搜索实际使用的完整命令行。</summary>
+    Public ReadOnly Property CurrentCommandLine As String
+        Get
+            SyncLock _processLock
+                Return _currentCommandLine
             End SyncLock
         End Get
     End Property
@@ -77,19 +87,35 @@ Public NotInheritable Class AbAv1Runner
         End SyncLock
     End Function
 
+    Public Shared Async Function BuildCommandLineAsync(profile As PresetProfile,
+                                                        inputPath As String,
+                                                        settings As SearchSettings,
+                                                        cancellationToken As CancellationToken) As Task(Of String)
+        Dim executable = GetExecutablePath()
+        Dim useJsonOutput = Await SupportsJsonOutputAsync(executable, cancellationToken).ConfigureAwait(False)
+        Dim arguments = profile.BuildSearchArguments(inputPath, settings, useJsonOutput)
+        Return FormatCommandLine(executable, arguments)
+    End Function
+
+    Public Shared Async Function BuildCommandLineTemplateAsync(profile As PresetProfile,
+                                                                settings As SearchSettings,
+                                                                cancellationToken As CancellationToken) As Task(Of String)
+        Dim executable = GetExecutablePath()
+        Dim useJsonOutput = Await SupportsJsonOutputAsync(executable, cancellationToken).ConfigureAwait(False)
+        Dim arguments = profile.BuildSearchArgumentTemplate(settings, useJsonOutput)
+        Return FormatCommandLine(executable, arguments)
+    End Function
+
     Public Async Function SearchAsync(profile As PresetProfile,
                                       inputPath As String,
                                       settings As SearchSettings,
                                       progress As IProgress(Of SearchProgress),
                                       cancellationToken As CancellationToken) As Task(Of SearchResult)
-        Dim executable = PluginEnvironment.AbAv1Path
-        If Not File.Exists(executable) Then
-            Throw New FileNotFoundException(
-                $"请将 ab-av1.exe 放到插件目录：{PluginEnvironment.PluginDirectory}",
-                executable)
-        End If
+        Dim executable = GetExecutablePath()
 
         Dim useJsonOutput = Await SupportsJsonOutputAsync(executable, cancellationToken).ConfigureAwait(False)
+        Dim arguments = profile.BuildSearchArguments(inputPath, settings, useJsonOutput)
+        SetCurrentCommandLine(FormatCommandLine(executable, arguments))
 
         Dim startInfo As New ProcessStartInfo With {
             .FileName = executable,
@@ -102,7 +128,7 @@ Public NotInheritable Class AbAv1Runner
             .StandardErrorEncoding = Encoding.UTF8
         }
 
-        For Each argument In profile.BuildSearchArguments(inputPath, settings, useJsonOutput)
+        For Each argument In arguments
             startInfo.ArgumentList.Add(argument)
         Next
 
@@ -145,6 +171,65 @@ Public NotInheritable Class AbAv1Runner
                 UnregisterProcess(process)
             End Try
         End Using
+    End Function
+
+    Private Shared Function GetExecutablePath() As String
+        Dim executable = PluginEnvironment.AbAv1Path
+        If Not File.Exists(executable) Then
+            Throw New FileNotFoundException(
+                $"请将 ab-av1.exe 放到插件目录：{PluginEnvironment.PluginDirectory}",
+                executable)
+        End If
+        Return executable
+    End Function
+
+    Private Sub SetCurrentCommandLine(value As String)
+        SyncLock _processLock
+            _currentCommandLine = value
+        End SyncLock
+    End Sub
+
+    Private Shared Function FormatCommandLine(executable As String,
+                                               arguments As IEnumerable(Of String)) As String
+        Dim commandLine As New StringBuilder(QuoteCommandLineArgument(executable))
+        For Each argument In arguments
+            commandLine.Append(" "c)
+            commandLine.Append(QuoteCommandLineArgument(argument))
+        Next
+        Return commandLine.ToString()
+    End Function
+
+    Private Shared Function QuoteCommandLineArgument(value As String) As String
+        Dim argument = If(value, String.Empty)
+        Dim requiresQuotes = argument.Length = 0 OrElse
+                             argument.Any(
+                                 Function(character)
+                                     Return Char.IsWhiteSpace(character) OrElse
+                                            character = """"c OrElse
+                                            "&|<>^()".Contains(character)
+                                 End Function)
+        If Not requiresQuotes Then Return argument
+
+        '遵循 CommandLineToArgvW 的反斜杠/双引号规则，同时给模板中的 <输入文件> 加引号。
+        Dim quoted As New StringBuilder()
+        quoted.Append(""""c)
+        Dim backslashCount = 0
+        For Each character In argument
+            If character = "\"c Then
+                backslashCount += 1
+            ElseIf character = """"c Then
+                quoted.Append("\"c, backslashCount * 2 + 1)
+                quoted.Append(character)
+                backslashCount = 0
+            Else
+                quoted.Append("\"c, backslashCount)
+                quoted.Append(character)
+                backslashCount = 0
+            End If
+        Next
+        quoted.Append("\"c, backslashCount * 2)
+        quoted.Append(""""c)
+        Return quoted.ToString()
     End Function
 
     Private Sub RegisterProcess(process As Process)

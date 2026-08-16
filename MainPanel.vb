@@ -44,12 +44,14 @@ Public NotInheritable Class MainPanel
     Private ReadOnly _resetButton As ModernButton
     Private ReadOnly _refreshModelsButton As ModernButton
     Private ReadOnly _browseModelButton As ModernButton
+    Private ReadOnly _copyCommandLineButton As ModernButton
     Private ReadOnly _taskContextMenu As ModernContextMenu
     Private ReadOnly _detailFont As Font
 
     Private ReadOnly _items As New List(Of QueueFileItem)()
     Private ReadOnly _lifetimeCancellation As New CancellationTokenSource()
     Private _activeItem As QueueFileItem
+    Private _contextMenuTarget As QueueFileItem
     Private _schedulerTask As Task
     Private _running As Boolean
     Private _scanningModels As Boolean
@@ -116,6 +118,7 @@ Public NotInheritable Class MainPanel
         _resetButton = CreateButton("重置状态", AddressOf ResetTasks)
         _refreshModelsButton = CreateButton("扫描模型", AddressOf RefreshModels)
         _browseModelButton = CreateButton("本地 JSON", AddressOf BrowseVmafModel)
+        _copyCommandLineButton = CreateButton("复制命令行", AddressOf CopyCommandLineTemplate)
         _startButton = CreateButton("开始搜索队列", AddressOf StartQueue, accent:=True)
         _taskContextMenu = CreateTaskContextMenu()
 
@@ -182,7 +185,7 @@ Public NotInheritable Class MainPanel
     Private Function BuildPathSection() As Control
         Dim layout As New TableLayoutPanel With {
             .Dock = DockStyle.Fill,
-            .ColumnCount = 3,
+            .ColumnCount = 5,
             .RowCount = 4,
             .Padding = Padding.Empty,
             .BackColor = Color.Transparent
@@ -190,6 +193,8 @@ Public NotInheritable Class MainPanel
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 150))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 12))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 12))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 180))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 48))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 48))
@@ -214,7 +219,7 @@ Public NotInheritable Class MainPanel
         _environmentStatus.TextAlign = ContentAlignment.MiddleRight
         topBar.Controls.Add(_environmentStatus, 1, 0)
         layout.Controls.Add(topBar, 0, 0)
-        layout.SetColumnSpan(topBar, 3)
+        layout.SetColumnSpan(topBar, 5)
 
         Dim browsePresetButton = CreateButton("选择预设", AddressOf BrowsePreset)
         Dim browseOutputButton = CreateButton("输出目录", AddressOf BrowseOutputDirectory)
@@ -225,8 +230,12 @@ Public NotInheritable Class MainPanel
 
         layout.Controls.Add(browsePresetButton, 0, 1)
         layout.Controls.Add(_presetPath, 2, 1)
+        _copyCommandLineButton.Dock = DockStyle.Fill
+        _copyCommandLineButton.Margin = New Padding(0, 6, 0, 6)
+        layout.Controls.Add(_copyCommandLineButton, 4, 1)
         layout.Controls.Add(browseOutputButton, 0, 2)
         layout.Controls.Add(_outputDirectory, 2, 2)
+        layout.SetColumnSpan(_outputDirectory, 3)
 
         Dim summaryCaption = CreateLabel("当前预设", ColorMuted, 9.5F)
         summaryCaption.Dock = DockStyle.Fill
@@ -235,6 +244,7 @@ Public NotInheritable Class MainPanel
         _presetSummary.Dock = DockStyle.Fill
         _presetSummary.TextAlign = ContentAlignment.MiddleLeft
         layout.Controls.Add(_presetSummary, 2, 3)
+        layout.SetColumnSpan(_presetSummary, 3)
         Return layout
     End Function
 
@@ -445,6 +455,23 @@ Public NotInheritable Class MainPanel
             If Directory.Exists(_outputDirectory.Text.Trim()) Then dialog.InitialDirectory = _outputDirectory.Text.Trim()
             If dialog.ShowDialog(FindForm()) = DialogResult.OK Then _outputDirectory.Text = dialog.SelectedPath
         End Using
+    End Sub
+
+    Private Async Sub CopyCommandLineTemplate(sender As Object, e As EventArgs)
+        Try
+            Dim profile = PresetProfile.Load(_presetPath.Text.Trim())
+            Dim settings = ReadSearchSettings()
+            Dim commandLine = Await AbAv1Runner.BuildCommandLineTemplateAsync(
+                profile,
+                settings,
+                _lifetimeCancellation.Token)
+            CopyCommandLineToClipboard(
+                commandLine,
+                "已复制当前预设的 ab-av1 命令行模板；<输入文件> 是待替换的路径。")
+        Catch ex As OperationCanceledException When _lifetimeCancellation.IsCancellationRequested
+        Catch ex As Exception
+            ShowCopyCommandLineError(ex)
+        End Try
     End Sub
 
     Private Async Sub RefreshModels(sender As Object, e As EventArgs)
@@ -701,6 +728,9 @@ Public NotInheritable Class MainPanel
                 SetBottomLine(item, CompactMessage(ex.Message), ColorDanger)
             End If
         Finally
+            If item.Runner IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(item.Runner.CurrentCommandLine) Then
+                item.CommandLine = item.Runner.CurrentCommandLine
+            End If
             item.Cancellation.Dispose()
             item.Cancellation = Nothing
             item.Runner = Nothing
@@ -825,6 +855,7 @@ Public NotInheritable Class MainPanel
             item.Result = Nothing
             item.OutputPath = String.Empty
             item.ErrorMessage = String.Empty
+            item.CommandLine = String.Empty
             item.Row.SubItems(2).Text = "—"
             item.Row.SubItems(3).Text = "—"
             item.Row.SubItems(4).Text = "—"
@@ -852,10 +883,14 @@ Public NotInheritable Class MainPanel
     Private Sub QueueMouseUp(sender As Object, e As MouseEventArgs)
         If e.Button <> MouseButtons.Right Then Return
 
+        _contextMenuTarget = Nothing
         Dim hitIndex = _fileList.HitTest(e.X, e.Y)
-        If hitIndex >= 0 AndAlso Not _fileList.SelectedIndices.Contains(hitIndex) Then
-            '右键未选中的项目时，让菜单明确作用于该项目；右键已有选择则保留多选。
-            _fileList.SelectedIndex = hitIndex
+        If hitIndex >= 0 Then
+            _contextMenuTarget = TryCast(_fileList.Items(hitIndex).Tag, QueueFileItem)
+            If Not _fileList.SelectedIndices.Contains(hitIndex) Then
+                '右键未选中的项目时，让菜单明确作用于该项目；右键已有选择则保留多选。
+                _fileList.SelectedIndex = hitIndex
+            End If
         End If
 
         RebuildTaskContextMenu()
@@ -872,6 +907,17 @@ Public NotInheritable Class MainPanel
         Dim activeTargets = targets.Where(
             Function(item) item.State = SearchTaskState.Running OrElse
                            item.State = SearchTaskState.Paused).ToList()
+
+        If _contextMenuTarget IsNot Nothing Then
+            AddTaskContextMenuItem("复制此任务的完整命令行", AddressOf CopyTaskCommandLine)
+        End If
+
+        Dim hasLifecycleAction = (Not _running AndAlso _items.Any(Function(item) item.State = SearchTaskState.Pending)) OrElse
+                                 activeTargets.Count > 0 OrElse
+                                 targets.Any(Function(item) item.State = SearchTaskState.Pending OrElse
+                                                           item.State = SearchTaskState.Running OrElse
+                                                           item.State = SearchTaskState.Paused)
+        If hasLifecycleAction AndAlso _taskContextMenu.Items.Count > 0 Then AddTaskContextMenuSeparator()
 
         If Not _running AndAlso _items.Any(Function(item) item.State = SearchTaskState.Pending) Then
             AddTaskContextMenuItem("开始搜索", AddressOf StartQueue)
@@ -903,6 +949,49 @@ Public NotInheritable Class MainPanel
             If canReset Then AddTaskContextMenuItem("重置所选任务状态", AddressOf ResetTasks)
             If canRemove Then AddTaskContextMenuItem("移除所选任务", AddressOf RemoveTasks)
         End If
+    End Sub
+
+    Private Async Sub CopyTaskCommandLine(sender As Object, e As EventArgs)
+        Dim item = _contextMenuTarget
+        If item Is Nothing OrElse Not _items.Contains(item) Then
+            UpdateStatus("未找到要复制命令行的任务。")
+            Return
+        End If
+
+        Try
+            Dim commandLine = item.CommandLine
+            If String.IsNullOrWhiteSpace(commandLine) AndAlso item.Runner IsNot Nothing Then
+                commandLine = item.Runner.CurrentCommandLine
+            End If
+            If String.IsNullOrWhiteSpace(commandLine) Then
+                Dim profile = PresetProfile.Load(_presetPath.Text.Trim())
+                Dim settings = ReadSearchSettings()
+                commandLine = Await AbAv1Runner.BuildCommandLineAsync(
+                    profile,
+                    item.Path,
+                    settings,
+                    _lifetimeCancellation.Token)
+            End If
+
+            CopyCommandLineToClipboard(
+                commandLine,
+                $"已复制 {Path.GetFileName(item.Path)} 的完整 ab-av1 命令行。")
+        Catch ex As OperationCanceledException When _lifetimeCancellation.IsCancellationRequested
+        Catch ex As Exception
+            ShowCopyCommandLineError(ex)
+        End Try
+    End Sub
+
+    Private Sub CopyCommandLineToClipboard(commandLine As String, successMessage As String)
+        If String.IsNullOrWhiteSpace(commandLine) Then Throw New InvalidOperationException("生成的命令行为空。")
+        Clipboard.SetText(commandLine)
+        UpdateStatus(successMessage)
+    End Sub
+
+    Private Sub ShowCopyCommandLineError(exception As Exception)
+        Dim message = "无法复制命令行：" & CompactMessage(exception.Message)
+        UpdateStatus(message)
+        MessageBox.Show(FindForm(), exception.Message, "复制 ab-av1 命令行", MessageBoxButtons.OK, MessageBoxIcon.Warning)
     End Sub
 
     Private Sub AddTaskContextMenuItem(text As String,
@@ -1293,6 +1382,7 @@ Public NotInheritable Class MainPanel
         Public Property Result As SearchResult
         Public Property OutputPath As String = String.Empty
         Public Property ErrorMessage As String = String.Empty
+        Public Property CommandLine As String = String.Empty
     End Class
 
 End Class
