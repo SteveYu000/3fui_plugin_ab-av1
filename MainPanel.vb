@@ -47,6 +47,7 @@ Public NotInheritable Class MainPanel
     Private ReadOnly _copyCommandLineButton As ModernButton
     Private ReadOnly _taskContextMenu As ModernContextMenu
     Private ReadOnly _detailFont As Font
+    Private ReadOnly ModernPanel1 As ModernPanel
 
     Private ReadOnly _items As New List(Of QueueFileItem)()
     Private ReadOnly _lifetimeCancellation As New CancellationTokenSource()
@@ -66,7 +67,7 @@ Public NotInheritable Class MainPanel
         Dock = DockStyle.Fill
         AllowDrop = True
         MinimumSize = New Size(900, 680)
-        Padding = New Padding(24, 20, 24, 18)
+        Padding = Padding.Empty
 
         _presetPath = CreateTextBox("选择 FFmpegFreeUI v6 JSON 预设")
         _outputDirectory = CreateTextBox("留空则输出到输入文件目录")
@@ -122,7 +123,21 @@ Public NotInheritable Class MainPanel
         _startButton = CreateButton("开始搜索队列", AddressOf StartQueue, accent:=True)
         _taskContextMenu = CreateTaskContextMenu()
 
-        Controls.Add(BuildLayout())
+        '3FUI 会寻找名为 ModernPanel1 且 Dock=Fill 的 LakeUI.ModernPanel，
+        '并在启用个性化背景时自动设置透明背景和 BackgroundSource。
+        ModernPanel1 = New ModernPanel With {
+            .Name = "ModernPanel1",
+            .Dock = DockStyle.Fill,
+            .Margin = Padding.Empty,
+            .Padding = New Padding(24, 20, 24, 18),
+            .BackColor = Color.Transparent,
+            .BackColor1 = ColorBackground,
+            .BorderSize = 0,
+            .BorderRadius = 0,
+            .AllowDrop = True
+        }
+        ModernPanel1.Controls.Add(BuildLayout())
+        Controls.Add(ModernPanel1)
 
         AddHandler _presetPath.LostFocus, AddressOf PresetPathLostFocus
         AddHandler _fileList.SelectedIndexChanged, AddressOf QueueSelectionChanged
@@ -132,6 +147,9 @@ Public NotInheritable Class MainPanel
         AddHandler Me.DragEnter, AddressOf FilesDragEnter
         AddHandler Me.DragOver, AddressOf FilesDragOver
         AddHandler Me.DragDrop, AddressOf FilesDragDrop
+        AddHandler ModernPanel1.DragEnter, AddressOf FilesDragEnter
+        AddHandler ModernPanel1.DragOver, AddressOf FilesDragOver
+        AddHandler ModernPanel1.DragDrop, AddressOf FilesDragDrop
         AddHandler _fileList.DragEnter, AddressOf FilesDragEnter
         AddHandler _fileList.DragOver, AddressOf FilesDragOver
         AddHandler _fileList.DragDrop, AddressOf FilesDragDrop
@@ -164,11 +182,11 @@ Public NotInheritable Class MainPanel
     Private Function BuildLayout() As Control
         Dim root As New TableLayoutPanel With {
             .Dock = DockStyle.Fill,
-            .BackColor = ColorBackground,
             .ColumnCount = 1,
             .RowCount = 4,
             .Margin = Padding.Empty,
-            .Padding = Padding.Empty
+            .Padding = Padding.Empty,
+            .BackColor = Color.Transparent
         }
         root.RowStyles.Add(New RowStyle(SizeType.Absolute, 184))
         root.RowStyles.Add(New RowStyle(SizeType.Absolute, 220))
@@ -358,7 +376,7 @@ Public NotInheritable Class MainPanel
             .Dock = DockStyle.Fill,
             .ColumnCount = 3,
             .RowCount = 1,
-            .BackColor = ColorBackground,
+            .BackColor = Color.Transparent,
             .Margin = Padding.Empty
         }
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 44))
@@ -1285,7 +1303,7 @@ Public NotInheritable Class MainPanel
         Dim list As New UltraDetailListView With {
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
-            .BackgroundColor = ColorBackground,
+            .BackgroundColor = Color.Transparent,
             .BorderColor = Color.Transparent,
             .BorderSize = 0,
             .BorderRadius = 0,
