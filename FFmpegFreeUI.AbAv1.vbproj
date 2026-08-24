@@ -16,7 +16,7 @@
     <DebugType>embedded</DebugType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <Authors>Github @SteveYu000</Authors>
     <Description>通过 FFmpegFreeUI 官方插件 API 集成 ab-av1 自动 CRF 搜索与任务队列。</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -27,7 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="LakeUI" Version="3.23.0" />
+    <!-- 按官方 3FUI 当前内置版本以下的 API 基线编译；.NET 会用宿主已加载的较新 LakeUI 满足该引用。 -->
+    <PackageReference Include="LakeUI" Version="3.16.0" />
   </ItemGroup>
 
   <Target Name="CreatePluginArtifact" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
