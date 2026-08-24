@@ -20,6 +20,7 @@ Public NotInheritable Class MainPanel
     Private Shared ReadOnly ColorSuccess As Color = Color.FromArgb(63, 205, 135)
     Private Shared ReadOnly ColorWarning As Color = Color.FromArgb(232, 177, 74)
     Private Shared ReadOnly ColorDanger As Color = Color.FromArgb(235, 93, 93)
+    Private Const ProgressRenderIntervalMilliseconds As Integer = 80
 
     Private ReadOnly _presetPath As ModernTextBox
     Private ReadOnly _outputDirectory As ModernTextBox
@@ -46,6 +47,7 @@ Public NotInheritable Class MainPanel
     Private ReadOnly _browseModelButton As ModernButton
     Private ReadOnly _copyCommandLineButton As ModernButton
     Private ReadOnly _taskContextMenu As ModernContextMenu
+    Private ReadOnly _progressRenderTimer As System.Windows.Forms.Timer
     Private ReadOnly _detailFont As Font
     Private ReadOnly ModernPanel1 As ModernPanel
 
@@ -57,8 +59,13 @@ Public NotInheritable Class MainPanel
     Private _running As Boolean
     Private _scanningModels As Boolean
     Private _initialModelScanStarted As Boolean
+    Private _pendingProgressItem As QueueFileItem
+    Private _pendingProgressStatus As String
+    Private _pendingProgressCrf As String
+    Private _pendingProgressVmaf As String
 
     Public Sub New()
+        SuspendLayout()
         DoubleBuffered = True
         BackColor = ColorBackground
         ForeColor = ColorText
@@ -122,6 +129,10 @@ Public NotInheritable Class MainPanel
         _copyCommandLineButton = CreateButton("复制命令行", AddressOf CopyCommandLineTemplate)
         _startButton = CreateButton("开始搜索队列", AddressOf StartQueue, accent:=True)
         _taskContextMenu = CreateTaskContextMenu()
+        _progressRenderTimer = New System.Windows.Forms.Timer With {
+            .Interval = ProgressRenderIntervalMilliseconds
+        }
+        AddHandler _progressRenderTimer.Tick, AddressOf ProgressRenderTimerTick
 
         '3FUI 会寻找名为 ModernPanel1 且 Dock=Fill 的 LakeUI.ModernPanel，
         '并在启用个性化背景时自动设置透明背景和 BackgroundSource。
@@ -136,6 +147,7 @@ Public NotInheritable Class MainPanel
             .BorderRadius = 0,
             .AllowDrop = True
         }
+        ModernPanel1.SuspendLayout()
         ModernPanel1.Controls.Add(BuildLayout())
         Controls.Add(ModernPanel1)
 
@@ -158,11 +170,16 @@ Public NotInheritable Class MainPanel
         RefreshEnvironmentStatus()
         RefreshPresetSummary()
         RefreshActionButtons()
+        ModernPanel1.ResumeLayout(False)
+        ResumeLayout(False)
     End Sub
 
     Protected Overrides Sub Dispose(disposing As Boolean)
         If disposing Then
             _lifetimeCancellation.Cancel()
+            _progressRenderTimer.Stop()
+            RemoveHandler _progressRenderTimer.Tick, AddressOf ProgressRenderTimerTick
+            _progressRenderTimer.Dispose()
             For Each item In _items.ToArray()
                 item.Cancellation?.Cancel()
             Next
@@ -188,6 +205,7 @@ Public NotInheritable Class MainPanel
             .Padding = Padding.Empty,
             .BackColor = Color.Transparent
         }
+        root.SuspendLayout()
         root.RowStyles.Add(New RowStyle(SizeType.Absolute, 184))
         root.RowStyles.Add(New RowStyle(SizeType.Absolute, 220))
         root.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
@@ -197,6 +215,7 @@ Public NotInheritable Class MainPanel
         root.Controls.Add(BuildSearchSection(), 0, 1)
         root.Controls.Add(BuildFileSection(), 0, 2)
         root.Controls.Add(BuildFooter(), 0, 3)
+        root.ResumeLayout(False)
         Return root
     End Function
 
@@ -208,6 +227,7 @@ Public NotInheritable Class MainPanel
             .Padding = Padding.Empty,
             .BackColor = Color.Transparent
         }
+        layout.SuspendLayout()
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 150))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 12))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
@@ -226,6 +246,7 @@ Public NotInheritable Class MainPanel
             .Padding = Padding.Empty,
             .BackColor = Color.Transparent
         }
+        topBar.SuspendLayout()
         topBar.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 70))
         topBar.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 30))
         topBar.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
@@ -236,6 +257,7 @@ Public NotInheritable Class MainPanel
         _environmentStatus.Dock = DockStyle.Fill
         _environmentStatus.TextAlign = ContentAlignment.MiddleRight
         topBar.Controls.Add(_environmentStatus, 1, 0)
+        topBar.ResumeLayout(False)
         layout.Controls.Add(topBar, 0, 0)
         layout.SetColumnSpan(topBar, 5)
 
@@ -263,6 +285,7 @@ Public NotInheritable Class MainPanel
         _presetSummary.TextAlign = ContentAlignment.MiddleLeft
         layout.Controls.Add(_presetSummary, 2, 3)
         layout.SetColumnSpan(_presetSummary, 3)
+        layout.ResumeLayout(False)
         Return layout
     End Function
 
@@ -274,6 +297,7 @@ Public NotInheritable Class MainPanel
             .Padding = New Padding(0, 10, 0, 10),
             .BackColor = Color.Transparent
         }
+        layout.SuspendLayout()
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 13.0F)) '目标 VMAF
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 13.0F)) '最小 CRF
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 13.0F)) '最大 CRF
@@ -303,6 +327,7 @@ Public NotInheritable Class MainPanel
             .Padding = New Padding(0, 10, 0, 4),
             .BackColor = Color.Transparent
         }
+        modelRow.SuspendLayout()
         modelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 150))
         modelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
         modelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 140))
@@ -325,9 +350,11 @@ Public NotInheritable Class MainPanel
         _vmafModelStatus.Dock = DockStyle.Fill
         _vmafModelStatus.TextAlign = ContentAlignment.MiddleLeft
         modelRow.Controls.Add(_vmafModelStatus, 4, 0)
+        modelRow.ResumeLayout(False)
 
         layout.Controls.Add(modelRow, 0, 2)
         layout.SetColumnSpan(modelRow, 6)
+        layout.ResumeLayout(False)
         Return layout
     End Function
 
@@ -339,6 +366,7 @@ Public NotInheritable Class MainPanel
             .Padding = New Padding(0, 0, 0, 10),
             .BackColor = Color.Transparent
         }
+        layout.SuspendLayout()
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 46))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 60))
         layout.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
@@ -355,6 +383,7 @@ Public NotInheritable Class MainPanel
             .BackColor = Color.Transparent,
             .Margin = Padding.Empty
         }
+        toolbar.SuspendLayout()
         For Each button In {_addFilesButton, _stopButton, _pauseResumeButton, _removeButton, _resetButton}
             button.Size = New Size(132, 42)
             button.Margin = New Padding(0, 9, 12, 9)
@@ -365,9 +394,11 @@ Public NotInheritable Class MainPanel
         hint.AutoSize = True
         hint.Margin = New Padding(10, 19, 0, 0)
         toolbar.Controls.Add(hint)
+        toolbar.ResumeLayout(False)
 
         layout.Controls.Add(toolbar, 0, 1)
         layout.Controls.Add(_fileList, 0, 2)
+        layout.ResumeLayout(False)
         Return layout
     End Function
 
@@ -379,6 +410,7 @@ Public NotInheritable Class MainPanel
             .BackColor = Color.Transparent,
             .Margin = Padding.Empty
         }
+        layout.SuspendLayout()
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 44))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 250))
@@ -389,6 +421,7 @@ Public NotInheritable Class MainPanel
         layout.Controls.Add(_progressRing, 0, 0)
         layout.Controls.Add(_status, 1, 0)
         layout.Controls.Add(_startButton, 2, 0)
+        layout.ResumeLayout(False)
         Return layout
     End Function
 
@@ -401,12 +434,14 @@ Public NotInheritable Class MainPanel
             .Margin = New Padding(0, 0, 10, 0),
             .Padding = Padding.Empty
         }
+        layout.SuspendLayout()
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 28))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 50))
         Dim label = CreateFieldLabel(caption)
         label.TextAlign = ContentAlignment.BottomLeft
         layout.Controls.Add(label, 0, 0)
         layout.Controls.Add(editor, 0, 1)
+        layout.ResumeLayout(False)
         Return layout
     End Function
 
@@ -591,27 +626,31 @@ Public NotInheritable Class MainPanel
 
     Private Function AddFilePaths(filePaths As IEnumerable(Of String)) As Integer
         Dim added = 0
-        For Each candidate In filePaths
-            If String.IsNullOrWhiteSpace(candidate) OrElse Not File.Exists(candidate) Then Continue For
-            Dim filePath = Path.GetFullPath(candidate)
-            If _items.Any(Function(existingItem) String.Equals(existingItem.Path, filePath, StringComparison.OrdinalIgnoreCase)) Then Continue For
+        _fileList.BeginUpdate()
+        Try
+            For Each candidate In filePaths
+                If String.IsNullOrWhiteSpace(candidate) OrElse Not File.Exists(candidate) Then Continue For
+                Dim filePath = Path.GetFullPath(candidate)
+                If _items.Any(Function(existingItem) String.Equals(existingItem.Path, filePath, StringComparison.OrdinalIgnoreCase)) Then Continue For
 
-            Dim row As New UltraDetailListView.ListItem({
-                New UltraDetailListView.ListSubItem(Path.GetFileName(filePath), Font, ColorText),
-                New UltraDetailListView.ListSubItem("等待", Font, ColorMuted),
-                New UltraDetailListView.ListSubItem("—", Font, ColorMuted),
-                New UltraDetailListView.ListSubItem("—", Font, ColorMuted),
-                New UltraDetailListView.ListSubItem("—", Font, ColorMuted)
-            })
-            Dim item As New QueueFileItem(filePath, row)
-            row.Tag = item
-            SetBottomLine(item, filePath, ColorMuted)
-            _fileList.Items.Add(row)
-            _items.Add(item)
-            added += 1
-        Next
+                Dim row As New UltraDetailListView.ListItem({
+                    New UltraDetailListView.ListSubItem(Path.GetFileName(filePath), Font, ColorText),
+                    New UltraDetailListView.ListSubItem("等待", Font, ColorMuted),
+                    New UltraDetailListView.ListSubItem("—", Font, ColorMuted),
+                    New UltraDetailListView.ListSubItem("—", Font, ColorMuted),
+                    New UltraDetailListView.ListSubItem("—", Font, ColorMuted)
+                })
+                Dim item As New QueueFileItem(filePath, row)
+                row.Tag = item
+                SetBottomLine(item, filePath, ColorMuted)
+                _fileList.Items.Add(row)
+                _items.Add(item)
+                added += 1
+            Next
+        Finally
+            _fileList.EndUpdate()
+        End Try
 
-        If added > 0 Then _fileList.RefreshItems()
         RefreshActionButtons()
         Return added
     End Function
@@ -694,21 +733,14 @@ Public NotInheritable Class MainPanel
         SetTaskState(item, SearchTaskState.Running)
         SetBottomLine(item, item.Path, ColorMuted)
         UpdateStatus($"{Path.GetFileName(item.Path)} · 正在启动 ab-av1")
+        RefreshRows({item})
         RefreshActionButtons()
 
         Dim localItem = item
         Dim progress As New Progress(Of SearchProgress)(
             Sub(update)
                 If IsDisposed Then Return
-                UpdateStatus($"{Path.GetFileName(localItem.Path)} · {CompactMessage(update.Message)}")
-                If update.TestedCrf.HasValue Then
-                    localItem.Row.SubItems(2).Text = SearchSettings.FormatNumber(update.TestedCrf.Value)
-                End If
-                If update.TestedVmaf.HasValue Then
-                    localItem.Row.SubItems(3).Text = update.TestedVmaf.Value.ToString("0.###", CultureInfo.InvariantCulture)
-                End If
-                localItem.Row.InvalidateCache()
-                _fileList.RefreshItems()
+                QueueProgressRender(localItem, update)
             End Sub)
 
         Try
@@ -746,6 +778,7 @@ Public NotInheritable Class MainPanel
                 SetBottomLine(item, CompactMessage(ex.Message), ColorDanger)
             End If
         Finally
+            ClearPendingProgress(item)
             If item.Runner IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(item.Runner.CurrentCommandLine) Then
                 item.CommandLine = item.Runner.CurrentCommandLine
             End If
@@ -754,8 +787,7 @@ Public NotInheritable Class MainPanel
             item.Runner = Nothing
             If Object.ReferenceEquals(_activeItem, item) Then _activeItem = Nothing
             If Not IsDisposed Then
-                item.Row.InvalidateCache()
-                _fileList.RefreshItems()
+                RefreshRows({item})
                 RefreshActionButtons()
             End If
         End Try
@@ -782,7 +814,7 @@ Public NotInheritable Class MainPanel
             End Select
         Next
         If changed > 0 Then UpdateStatus($"正在停止 {changed} 个任务…")
-        _fileList.RefreshItems()
+        If changed > 0 Then RefreshRows(targets)
         RefreshActionButtons()
     End Sub
 
@@ -831,7 +863,7 @@ Public NotInheritable Class MainPanel
         Else
             UpdateStatus("所选任务中没有可执行此操作的活动任务。")
         End If
-        _fileList.RefreshItems()
+        If changed > 0 Then RefreshRows(activeTargets)
         RefreshActionButtons()
     End Sub
 
@@ -848,11 +880,15 @@ Public NotInheritable Class MainPanel
             Return
         End If
 
-        For Each item In targets
-            _fileList.Items.Remove(item.Row)
-            _items.Remove(item)
-        Next
-        _fileList.RefreshItems()
+        _fileList.BeginUpdate()
+        Try
+            For Each item In targets
+                _fileList.Items.Remove(item.Row)
+                _items.Remove(item)
+            Next
+        Finally
+            _fileList.EndUpdate()
+        End Try
         UpdateStatus($"已移除 {targets.Count} 个任务。")
         RefreshActionButtons()
     End Sub
@@ -882,7 +918,7 @@ Public NotInheritable Class MainPanel
             changed += 1
         Next
 
-        _fileList.RefreshItems()
+        If changed > 0 Then RefreshRows(targets)
         If changed > 0 Then
             UpdateStatus($"已重置 {changed} 个任务；运行中的队列会自动继续处理。")
         Else
@@ -1168,18 +1204,91 @@ Public NotInheritable Class MainPanel
         End Select
         item.Row.SubItems(1).Text = text
         item.Row.SubItems(1).ForeColor = color
-        item.Row.InvalidateCache()
     End Sub
 
     Private Sub SetBottomLine(item As QueueFileItem, text As String, color As Color)
         item.Row.BottomLines.Clear()
         item.Row.BottomLines.Add(New UltraDetailListView.TextLine(text, _detailFont, color))
-        item.Row.InvalidateCache()
+    End Sub
+
+    Private Sub QueueProgressRender(item As QueueFileItem, update As SearchProgress)
+        If IsDisposed OrElse item Is Nothing OrElse Not _items.Contains(item) Then Return
+        If item.State <> SearchTaskState.Running AndAlso item.State <> SearchTaskState.Paused Then Return
+
+        _pendingProgressItem = item
+        _pendingProgressStatus = $"{Path.GetFileName(item.Path)} · {CompactMessage(update.Message)}"
+        If update.TestedCrf.HasValue Then
+            _pendingProgressCrf = SearchSettings.FormatNumber(update.TestedCrf.Value)
+        End If
+        If update.TestedVmaf.HasValue Then
+            _pendingProgressVmaf = update.TestedVmaf.Value.ToString("0.###", CultureInfo.InvariantCulture)
+        End If
+        If Not _progressRenderTimer.Enabled Then _progressRenderTimer.Start()
+    End Sub
+
+    Private Sub ProgressRenderTimerTick(sender As Object, e As EventArgs)
+        _progressRenderTimer.Stop()
+        FlushPendingProgressRender()
+    End Sub
+
+    Private Sub FlushPendingProgressRender()
+        If IsDisposed Then Return
+
+        Dim item = _pendingProgressItem
+        Dim statusText = _pendingProgressStatus
+        Dim crfText = _pendingProgressCrf
+        Dim vmafText = _pendingProgressVmaf
+        _pendingProgressItem = Nothing
+        _pendingProgressStatus = Nothing
+        _pendingProgressCrf = Nothing
+        _pendingProgressVmaf = Nothing
+
+        If statusText IsNot Nothing Then UpdateStatus(statusText)
+        If item Is Nothing OrElse Not _items.Contains(item) Then Return
+        If item.State <> SearchTaskState.Running AndAlso item.State <> SearchTaskState.Paused Then Return
+
+        Dim changed = False
+        If crfText IsNot Nothing AndAlso item.Row.SubItems(2).Text <> crfText Then
+            item.Row.SubItems(2).Text = crfText
+            changed = True
+        End If
+        If vmafText IsNot Nothing AndAlso item.Row.SubItems(3).Text <> vmafText Then
+            item.Row.SubItems(3).Text = vmafText
+            changed = True
+        End If
+        If changed Then RefreshRows({item})
+    End Sub
+
+    Private Sub ClearPendingProgress(item As QueueFileItem)
+        If Not Object.ReferenceEquals(_pendingProgressItem, item) Then Return
+        If Not IsDisposed Then _progressRenderTimer.Stop()
+        _pendingProgressItem = Nothing
+        _pendingProgressStatus = Nothing
+        _pendingProgressCrf = Nothing
+        _pendingProgressVmaf = Nothing
+    End Sub
+
+    Private Sub RefreshRows(items As IEnumerable(Of QueueFileItem))
+        If IsDisposed OrElse items Is Nothing Then Return
+        Dim targets = items.Where(
+            Function(item) item IsNot Nothing AndAlso _items.Contains(item)).Distinct().ToList()
+        If targets.Count = 0 Then Return
+
+        _fileList.BeginUpdate()
+        Try
+            For Each item In targets
+                item.Row.InvalidateCache()
+            Next
+        Finally
+            _fileList.EndUpdate()
+        End Try
     End Sub
 
     Private Sub UpdateStatus(message As String)
         If IsDisposed Then Return
-        _status.Text = CompactMessage(message)
+        Dim text = CompactMessage(message)
+        If String.Equals(_status.Text, text, StringComparison.Ordinal) Then Return
+        _status.Text = text
     End Sub
 
     Private Shared Function CompactMessage(message As String) As String
