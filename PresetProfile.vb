@@ -102,12 +102,65 @@ Public NotInheritable Class PresetProfile
         Return BuildSearchArgumentsCore("<输入文件>", settings, jsonOutput)
     End Function
 
+    Public Function BuildSampleEncodeArguments(inputPath As String,
+                                                settings As SampleEncodeSettings,
+                                                Optional jsonOutput As Boolean = False) As List(Of String)
+        If Not File.Exists(inputPath) Then Throw New FileNotFoundException("找不到输入文件。", inputPath)
+        settings.Validate()
+        Return BuildSampleEncodeArgumentsCore(Path.GetFullPath(inputPath), settings, jsonOutput)
+    End Function
+
+    ''' <summary>生成 sample-encode 使用输入文件占位符的命令行参数模板。</summary>
+    Public Function BuildSampleEncodeArgumentTemplate(settings As SampleEncodeSettings,
+                                                       Optional jsonOutput As Boolean = False) As List(Of String)
+        settings.Validate()
+        Return BuildSampleEncodeArgumentsCore("<输入文件>", settings, jsonOutput)
+    End Function
+
     Private Function BuildSearchArgumentsCore(inputArgument As String,
                                                settings As SearchSettings,
                                                jsonOutput As Boolean) As List(Of String)
+        Dim arguments = BuildEncodeArgumentsCore("crf-search", inputArgument)
 
+        arguments.Add(If(settings.Metric = QualityMetric.Xpsnr, "--min-xpsnr", "--min-vmaf"))
+        arguments.Add(SearchSettings.FormatNumber(settings.TargetScore))
+        arguments.Add("--min-crf")
+        arguments.Add(SearchSettings.FormatNumber(settings.MinCrf))
+        arguments.Add("--max-crf")
+        arguments.Add(SearchSettings.FormatNumber(settings.MaxCrf))
+
+        ' libsvtav1 的默认增量就是 1；显式指定可确保结果能通过 FFmpegFreeUI 的常规 -crf 选项应用。
+        arguments.Add("--crf-increment")
+        arguments.Add("1")
+
+        AddSampleArguments(arguments, settings.Samples, settings.SampleDuration)
+        If settings.Thorough Then arguments.Add("--thorough")
+        If settings.Metric = QualityMetric.Vmaf Then AddVmafModelArgument(arguments, settings.VmafModel)
+        AddJsonOutputArgument(arguments, jsonOutput)
+        Return arguments
+    End Function
+
+    Private Function BuildSampleEncodeArgumentsCore(inputArgument As String,
+                                                     settings As SampleEncodeSettings,
+                                                     jsonOutput As Boolean) As List(Of String)
+        Dim arguments = BuildEncodeArgumentsCore("sample-encode", inputArgument)
+        arguments.Add("--crf")
+        arguments.Add(SearchSettings.FormatNumber(settings.Crf))
+        AddSampleArguments(arguments, settings.Samples, settings.SampleDuration)
+
+        If settings.Metric = QualityMetric.Xpsnr Then
+            arguments.Add("--xpsnr")
+        Else
+            AddVmafModelArgument(arguments, settings.VmafModel)
+        End If
+        AddJsonOutputArgument(arguments, jsonOutput)
+        Return arguments
+    End Function
+
+    Private Function BuildEncodeArgumentsCore(commandName As String,
+                                              inputArgument As String) As List(Of String)
         Dim arguments As New List(Of String) From {
-            "crf-search",
+            commandName,
             "--input", inputArgument,
             "--encoder", Encoder
         }
@@ -147,40 +200,34 @@ Public NotInheritable Class PresetProfile
             arguments.Add("--enc")
             arguments.Add(value)
         Next
+        Return arguments
+    End Function
 
-        arguments.Add("--min-vmaf")
-        arguments.Add(SearchSettings.FormatNumber(settings.TargetVmaf))
-        arguments.Add("--min-crf")
-        arguments.Add(SearchSettings.FormatNumber(settings.MinCrf))
-        arguments.Add("--max-crf")
-        arguments.Add(SearchSettings.FormatNumber(settings.MaxCrf))
-
-        ' libsvtav1 的默认增量就是 1；显式指定可确保结果能通过 FFmpegFreeUI 的常规 -crf 选项应用。
-        arguments.Add("--crf-increment")
-        arguments.Add("1")
-
-        If settings.Samples.HasValue Then
+    Private Shared Sub AddSampleArguments(arguments As List(Of String),
+                                          samples As Integer?,
+                                          sampleDuration As String)
+        If samples.HasValue Then
             arguments.Add("--samples")
-            arguments.Add(settings.Samples.Value.ToString(CultureInfo.InvariantCulture))
+            arguments.Add(samples.Value.ToString(CultureInfo.InvariantCulture))
         End If
-
         arguments.Add("--sample-duration")
-        arguments.Add(settings.SampleDuration.Trim())
+        arguments.Add(sampleDuration.Trim())
+    End Sub
 
-        If settings.Thorough Then arguments.Add("--thorough")
-
-        Dim vmafModelArgument = BuildVmafModelArgument(settings.VmafModel)
+    Private Shared Sub AddVmafModelArgument(arguments As List(Of String), model As String)
+        Dim vmafModelArgument = BuildVmafModelArgument(model)
         If vmafModelArgument <> "" Then
             arguments.Add("--vmaf")
             arguments.Add(vmafModelArgument)
         End If
+    End Sub
 
+    Private Shared Sub AddJsonOutputArgument(arguments As List(Of String), jsonOutput As Boolean)
         If jsonOutput Then
             arguments.Add("--stdout-format")
             arguments.Add("json")
         End If
-        Return arguments
-    End Function
+    End Sub
 
     ''' <summary>
     ''' 将模型名称或 JSON 路径转换为 ab-av1 的 --vmaf 参数。

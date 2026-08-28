@@ -16,10 +16,13 @@ Public NotInheritable Class AbAv1Runner
         "\x1B\[[0-?]*[ -/]*[@-~]",
         RegexOptions.Compiled Or RegexOptions.CultureInvariant)
     Private Shared ReadOnly HumanResultRegex As New Regex(
-        "\bcrf\s+(?<crf>-?\d+(?:\.\d+)?)\s+VMAF\s+(?<vmaf>-?\d+(?:\.\d+)?)\s+predicted\s+(?:video\s+stream|image)\s+size\s+(?<size>\d+(?:\.\d+)?)\s+(?<unit>[KMGTPE]?i?B)\b",
+        "\bcrf\s+(?<crf>-?\d+(?:\.\d+)?)\s+(?<metric>VMAF|XPSNR)\s+(?<score>-?\d+(?:\.\d+)?)\s+predicted\s+(?:video\s+stream|image)\s+size\s+(?<size>\d+(?:\.\d+)?)\s+(?<unit>[KMGTPE]?i?B)\b",
         RegexOptions.Compiled Or RegexOptions.CultureInvariant Or RegexOptions.IgnoreCase)
     Private Shared ReadOnly HumanAttemptRegex As New Regex(
-        "\bcrf\s+(?<crf>-?\d+(?:\.\d+)?)\s+VMAF\s+(?<vmaf>-?\d+(?:\.\d+)?)\b",
+        "\bcrf\s+(?<crf>-?\d+(?:\.\d+)?)\s+(?<metric>VMAF|XPSNR)\s+(?<score>-?\d+(?:\.\d+)?)\b",
+        RegexOptions.Compiled Or RegexOptions.CultureInvariant Or RegexOptions.IgnoreCase)
+    Private Shared ReadOnly HumanSampleResultRegex As New Regex(
+        "\b(?<metric>VMAF|XPSNR)\s+(?<score>-?\d+(?:\.\d+)?)\s+predicted\s+(?:video\s+stream|image)\s+size\s+(?<size>\d+(?:\.\d+)?)\s+(?<unit>[KMGTPE]?i?B)\b",
         RegexOptions.Compiled Or RegexOptions.CultureInvariant Or RegexOptions.IgnoreCase)
 
     Private Shared _jsonSupportExecutable As String = String.Empty
@@ -106,6 +109,25 @@ Public NotInheritable Class AbAv1Runner
         Return FormatCommandLine(executable, arguments)
     End Function
 
+    Public Shared Async Function BuildSampleCommandLineAsync(profile As PresetProfile,
+                                                              inputPath As String,
+                                                              settings As SampleEncodeSettings,
+                                                              cancellationToken As CancellationToken) As Task(Of String)
+        Dim executable = GetExecutablePath()
+        Dim useJsonOutput = Await SupportsJsonOutputAsync(executable, cancellationToken).ConfigureAwait(False)
+        Dim arguments = profile.BuildSampleEncodeArguments(inputPath, settings, useJsonOutput)
+        Return FormatCommandLine(executable, arguments)
+    End Function
+
+    Public Shared Async Function BuildSampleCommandLineTemplateAsync(profile As PresetProfile,
+                                                                      settings As SampleEncodeSettings,
+                                                                      cancellationToken As CancellationToken) As Task(Of String)
+        Dim executable = GetExecutablePath()
+        Dim useJsonOutput = Await SupportsJsonOutputAsync(executable, cancellationToken).ConfigureAwait(False)
+        Dim arguments = profile.BuildSampleEncodeArgumentTemplate(settings, useJsonOutput)
+        Return FormatCommandLine(executable, arguments)
+    End Function
+
     Public Async Function SearchAsync(profile As PresetProfile,
                                       inputPath As String,
                                       settings As SearchSettings,
@@ -139,7 +161,7 @@ Public NotInheritable Class AbAv1Runner
             Dim stderrLines As New ConcurrentQueue(Of String)()
             Dim stdoutTask As Task(Of SearchResult)
             If useJsonOutput Then
-                stdoutTask = ReadJsonStdoutAsync(process.StandardOutput, progress, cancellationToken)
+                stdoutTask = ReadJsonStdoutAsync(process.StandardOutput, settings.Metric, progress, cancellationToken)
             Else
                 stdoutTask = ReadHumanStdoutAsync(process.StandardOutput, progress, cancellationToken)
             End If
@@ -159,6 +181,76 @@ Public NotInheritable Class AbAv1Runner
                         "ab-av1 已结束，但没有输出可识别的 CRF 搜索结果。")
                 End If
 
+                Return result
+            Catch ex As OperationCanceledException
+                TerminateProcess(process)
+                Throw
+            Catch
+                TerminateProcess(process)
+                Throw
+            Finally
+                TerminateProcess(process)
+                UnregisterProcess(process)
+            End Try
+        End Using
+    End Function
+
+    Public Async Function SampleEncodeAsync(profile As PresetProfile,
+                                             inputPath As String,
+                                             settings As SampleEncodeSettings,
+                                             progress As IProgress(Of SearchProgress),
+                                             cancellationToken As CancellationToken) As Task(Of SampleEncodeResult)
+        Dim executable = GetExecutablePath()
+        Dim useJsonOutput = Await SupportsJsonOutputAsync(executable, cancellationToken).ConfigureAwait(False)
+        Dim arguments = profile.BuildSampleEncodeArguments(inputPath, settings, useJsonOutput)
+        SetCurrentCommandLine(FormatCommandLine(executable, arguments))
+
+        Dim startInfo As New ProcessStartInfo With {
+            .FileName = executable,
+            .WorkingDirectory = PluginEnvironment.PluginDirectory,
+            .UseShellExecute = False,
+            .CreateNoWindow = True,
+            .RedirectStandardOutput = True,
+            .RedirectStandardError = True,
+            .StandardOutputEncoding = Encoding.UTF8,
+            .StandardErrorEncoding = Encoding.UTF8
+        }
+        For Each argument In arguments
+            startInfo.ArgumentList.Add(argument)
+        Next
+
+        Using process As New Process With {.StartInfo = startInfo}
+            If Not process.Start() Then Throw New InvalidOperationException("无法启动 ab-av1.exe。")
+            RegisterProcess(process)
+
+            Dim stderrLines As New ConcurrentQueue(Of String)()
+            Dim stdoutTask As Task(Of SampleEncodeResult)
+            If useJsonOutput Then
+                stdoutTask = ReadJsonSampleStdoutAsync(
+                    process.StandardOutput,
+                    settings,
+                    progress,
+                    cancellationToken)
+            Else
+                stdoutTask = ReadHumanSampleStdoutAsync(
+                    process.StandardOutput,
+                    settings,
+                    progress,
+                    cancellationToken)
+            End If
+            Dim stderrTask = ReadStderrAsync(process.StandardError, stderrLines, progress, cancellationToken)
+
+            Try
+                Await process.WaitForExitAsync(cancellationToken).ConfigureAwait(False)
+                Dim result = Await stdoutTask.ConfigureAwait(False)
+                Await stderrTask.ConfigureAwait(False)
+
+                If process.ExitCode <> 0 Then
+                    Throw New InvalidOperationException(BuildFailureMessage(process.ExitCode, stderrLines))
+                End If
+                If result Is Nothing Then
+                    Throw New InvalidDataException("ab-av1 已结束，但没有输出可识别的样本编码结果。")
+                End If
                 Return result
             Catch ex As OperationCanceledException
                 TerminateProcess(process)
@@ -329,6 +421,7 @@ Public NotInheritable Class AbAv1Runner
     End Function
 
     Private Shared Async Function ReadJsonStdoutAsync(reader As StreamReader,
+                                                       expectedMetric As QualityMetric,
                                                        progress As IProgress(Of SearchProgress),
                                                        cancellationToken As CancellationToken) As Task(Of SearchResult)
         Dim finalResult As SearchResult = Nothing
@@ -346,17 +439,24 @@ Public NotInheritable Class AbAv1Runner
                     Select Case type
                         Case "sample-encode-done"
                             Dim crf = GetDouble(root, "crf")
-                            Dim vmaf = GetOptionalDouble(root, "vmaf")
+                            Dim actualMetric = expectedMetric
+                            Dim score = GetMetricScore(root, expectedMetric, actualMetric)
                             Dim message = $"测试 CRF {FormatNumber(crf)}"
-                            If vmaf.HasValue Then message &= $" · VMAF {vmaf.Value:0.###}"
-                            progress?.Report(New SearchProgress(message, crf, vmaf))
+                            If score.HasValue Then
+                                message &= $" · {GetMetricDisplayName(actualMetric)} {score.Value:0.###}"
+                            End If
+                            progress?.Report(New SearchProgress(message, crf, score, actualMetric))
 
                         Case "crf-search-done"
+                            Dim actualMetric = expectedMetric
+                            Dim score = GetMetricScore(root, expectedMetric, actualMetric)
                             finalResult = New SearchResult With {
                                 .Crf = GetDouble(root, "crf"),
-                                .Vmaf = GetOptionalDouble(root, "vmaf").GetValueOrDefault(),
+                                .Metric = actualMetric,
+                                .Score = score.GetValueOrDefault(),
                                 .PredictedEncodeSize = GetOptionalInt64(root, "predicted_encode_size").GetValueOrDefault(),
-                                .PredictedEncodeSeconds = GetOptionalDouble(root, "predicted_encode_seconds").GetValueOrDefault()
+                                .PredictedEncodeSeconds = GetOptionalDouble(root, "predicted_encode_seconds").GetValueOrDefault(),
+                                .PredictedEncodePercent = GetOptionalDouble(root, "predicted_encode_percent").GetValueOrDefault()
                             }
 
                         Case "crf-search-error"
@@ -370,6 +470,48 @@ Public NotInheritable Class AbAv1Runner
             End Try
         End While
 
+        Return finalResult
+    End Function
+
+    Private Shared Async Function ReadJsonSampleStdoutAsync(reader As StreamReader,
+                                                             settings As SampleEncodeSettings,
+                                                             progress As IProgress(Of SearchProgress),
+                                                             cancellationToken As CancellationToken) As Task(Of SampleEncodeResult)
+        Dim finalResult As SampleEncodeResult = Nothing
+
+        While True
+            Dim line = Await reader.ReadLineAsync(cancellationToken).ConfigureAwait(False)
+            If line Is Nothing Then Exit While
+            If String.IsNullOrWhiteSpace(line) Then Continue While
+
+            Try
+                Using document = JsonDocument.Parse(line)
+                    Dim root = document.RootElement
+                    Dim type = GetString(root, "type")
+                    ' ab-av1 <= 0.11.4 的直接 sample-encode JSON 没有 type/crf/from_cache 字段。
+                    If type = "sample-encode-done" OrElse
+                       (type = "" AndAlso GetOptionalInt64(root, "predicted_encode_size").HasValue) Then
+                        Dim actualMetric = settings.Metric
+                        Dim score = GetMetricScore(root, settings.Metric, actualMetric)
+                        finalResult = New SampleEncodeResult With {
+                            .Crf = GetOptionalDouble(root, "crf").GetValueOrDefault(settings.Crf),
+                            .Metric = actualMetric,
+                            .Score = score.GetValueOrDefault(),
+                            .PredictedEncodeSize = GetOptionalInt64(root, "predicted_encode_size").GetValueOrDefault(),
+                            .PredictedEncodeSeconds = GetOptionalDouble(root, "predicted_encode_seconds").GetValueOrDefault(),
+                            .PredictedEncodePercent = GetOptionalDouble(root, "predicted_encode_percent").GetValueOrDefault()
+                        }
+                        Dim message = $"CRF {FormatNumber(finalResult.Crf)} 样本完成"
+                        If score.HasValue Then
+                            message &= $" · {GetMetricDisplayName(actualMetric)} {score.Value:0.###}"
+                        End If
+                        progress?.Report(New SearchProgress(message, finalResult.Crf, score, actualMetric))
+                    End If
+                End Using
+            Catch ex As JsonException
+                Throw New InvalidDataException($"无法解析 ab-av1 JSON 输出：{line}", ex)
+            End Try
+        End While
         Return finalResult
     End Function
 
@@ -388,14 +530,41 @@ Public NotInheritable Class AbAv1Runner
             If parsed IsNot Nothing Then
                 finalResult = parsed
                 progress?.Report(New SearchProgress(
-                    $"找到 CRF {FormatNumber(parsed.Crf)} · VMAF {parsed.Vmaf:0.###}",
+                    $"找到 CRF {FormatNumber(parsed.Crf)} · {GetMetricDisplayName(parsed.Metric)} {parsed.Score:0.###}",
                     parsed.Crf,
-                    parsed.Vmaf))
+                    parsed.Score,
+                    parsed.Metric))
             Else
                 progress?.Report(New SearchProgress(clean))
             End If
         End While
 
+        Return finalResult
+    End Function
+
+    Private Shared Async Function ReadHumanSampleStdoutAsync(reader As StreamReader,
+                                                              settings As SampleEncodeSettings,
+                                                              progress As IProgress(Of SearchProgress),
+                                                              cancellationToken As CancellationToken) As Task(Of SampleEncodeResult)
+        Dim finalResult As SampleEncodeResult = Nothing
+        While True
+            Dim line = Await reader.ReadLineAsync(cancellationToken).ConfigureAwait(False)
+            If line Is Nothing Then Exit While
+            Dim clean = StripTerminalFormatting(line).Trim()
+            If clean.Length = 0 Then Continue While
+
+            Dim parsed = TryParseHumanSampleResult(clean, settings.Crf)
+            If parsed IsNot Nothing Then
+                finalResult = parsed
+                progress?.Report(New SearchProgress(
+                    $"CRF {FormatNumber(parsed.Crf)} 样本完成 · {GetMetricDisplayName(parsed.Metric)} {parsed.Score:0.###}",
+                    parsed.Crf,
+                    parsed.Score,
+                    parsed.Metric))
+            Else
+                progress?.Report(New SearchProgress(clean))
+            End If
+        End While
         Return finalResult
     End Function
 
@@ -427,17 +596,36 @@ Public NotInheritable Class AbAv1Runner
         If Not match.Success Then Return Nothing
 
         Dim crf As Double
-        Dim vmaf As Double
+        Dim score As Double
         Dim size As Double
         If Not TryParseInvariant(match.Groups("crf").Value, crf) OrElse
-           Not TryParseInvariant(match.Groups("vmaf").Value, vmaf) OrElse
+           Not TryParseInvariant(match.Groups("score").Value, score) OrElse
            Not TryParseInvariant(match.Groups("size").Value, size) Then
             Return Nothing
         End If
 
         Return New SearchResult With {
             .Crf = crf,
-            .Vmaf = vmaf,
+            .Metric = ParseMetric(match.Groups("metric").Value),
+            .Score = score,
+            .PredictedEncodeSize = ConvertHumanBytes(size, match.Groups("unit").Value)
+        }
+    End Function
+
+    Private Shared Function TryParseHumanSampleResult(line As String, crf As Double) As SampleEncodeResult
+        Dim match = HumanSampleResultRegex.Match(line)
+        If Not match.Success Then Return Nothing
+
+        Dim score As Double
+        Dim size As Double
+        If Not TryParseInvariant(match.Groups("score").Value, score) OrElse
+           Not TryParseInvariant(match.Groups("size").Value, size) Then
+            Return Nothing
+        End If
+        Return New SampleEncodeResult With {
+            .Crf = crf,
+            .Metric = ParseMetric(match.Groups("metric").Value),
+            .Score = score,
             .PredictedEncodeSize = ConvertHumanBytes(size, match.Groups("unit").Value)
         }
     End Function
@@ -447,13 +635,18 @@ Public NotInheritable Class AbAv1Runner
         If Not match.Success Then Return Nothing
 
         Dim crf As Double
-        Dim vmaf As Double
+        Dim score As Double
         If Not TryParseInvariant(match.Groups("crf").Value, crf) OrElse
-           Not TryParseInvariant(match.Groups("vmaf").Value, vmaf) Then
+           Not TryParseInvariant(match.Groups("score").Value, score) Then
             Return Nothing
         End If
 
-        Return New SearchProgress($"测试 CRF {FormatNumber(crf)} · VMAF {vmaf:0.###}", crf, vmaf)
+        Dim metric = ParseMetric(match.Groups("metric").Value)
+        Return New SearchProgress(
+            $"测试 CRF {FormatNumber(crf)} · {GetMetricDisplayName(metric)} {score:0.###}",
+            crf,
+            score,
+            metric)
     End Function
 
     Private Shared Function ConvertHumanBytes(value As Double, unit As String) As Long
@@ -506,6 +699,27 @@ Public NotInheritable Class AbAv1Runner
             Return value.GetString()
         End If
         Return String.Empty
+    End Function
+
+    Private Shared Function GetMetricScore(root As JsonElement,
+                                           preferredMetric As QualityMetric,
+                                           ByRef actualMetric As QualityMetric) As Double?
+        Dim preferred = GetOptionalDouble(root, GetMetricJsonPropertyName(preferredMetric))
+        If preferred.HasValue Then
+            actualMetric = preferredMetric
+            Return preferred
+        End If
+
+        Dim fallbackMetric = If(preferredMetric = QualityMetric.Vmaf, QualityMetric.Xpsnr, QualityMetric.Vmaf)
+        Dim fallback = GetOptionalDouble(root, GetMetricJsonPropertyName(fallbackMetric))
+        If fallback.HasValue Then actualMetric = fallbackMetric
+        Return fallback
+    End Function
+
+    Private Shared Function ParseMetric(value As String) As QualityMetric
+        Return If(String.Equals(value, "XPSNR", StringComparison.OrdinalIgnoreCase),
+                  QualityMetric.Xpsnr,
+                  QualityMetric.Vmaf)
     End Function
 
     Private Shared Function GetDouble(root As JsonElement, name As String) As Double

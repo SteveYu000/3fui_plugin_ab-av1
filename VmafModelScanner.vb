@@ -8,10 +8,25 @@ Imports System.Threading.Tasks
 ''' <summary>使用 FFmpeg 的默认可执行文件搜索规则探测当前 libvmaf 内置模型。</summary>
 Public NotInheritable Class VmafModelScanner
 
+    Private Shared ReadOnly ScanGate As New SemaphoreSlim(1, 1)
+    Private Shared _cachedResult As VmafModelScanResult
+
     Private Sub New()
     End Sub
 
-    Public Shared Async Function ScanAsync(cancellationToken As CancellationToken) As Task(Of VmafModelScanResult)
+    Public Shared Async Function ScanAsync(cancellationToken As CancellationToken,
+                                           Optional forceRefresh As Boolean = False) As Task(Of VmafModelScanResult)
+        Await ScanGate.WaitAsync(cancellationToken).ConfigureAwait(False)
+        Try
+            If Not forceRefresh AndAlso _cachedResult IsNot Nothing Then Return _cachedResult
+            _cachedResult = Await ScanCoreAsync(cancellationToken).ConfigureAwait(False)
+            Return _cachedResult
+        Finally
+            ScanGate.Release()
+        End Try
+    End Function
+
+    Private Shared Async Function ScanCoreAsync(cancellationToken As CancellationToken) As Task(Of VmafModelScanResult)
         Try
             Dim query = Await RunFfmpegHelpAsync(cancellationToken).ConfigureAwait(False)
             If query.ExitCode <> 0 Then

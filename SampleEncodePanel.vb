@@ -7,7 +7,11 @@ Imports System.Threading.Tasks
 Imports System.Windows.Forms
 Imports LakeUI
 
-Public NotInheritable Class MainPanel
+''' <summary>
+''' ab-av1 sample-encode 的独立任务页。任务只评估指定 CRF 的样本质量与完整编码预测，
+''' 不会创建临时 3FUI 预设，也不会加入宿主的正式编码队列。
+''' </summary>
+Friend NotInheritable Class SampleEncodePanel
     Inherits UserControl
 
     Private Shared ReadOnly ColorBackground As Color = Color.FromArgb(24, 24, 24)
@@ -21,21 +25,12 @@ Public NotInheritable Class MainPanel
     Private Shared ReadOnly ColorWarning As Color = Color.FromArgb(232, 177, 74)
     Private Shared ReadOnly ColorDanger As Color = Color.FromArgb(235, 93, 93)
     Private Const ProgressRenderIntervalMilliseconds As Integer = 80
-    Private Const SearchHeadingHeight As Single = 44.0F
-    Private Const SearchParameterRowHeight As Single = 82.0F
-    Private Const SearchModelHeight As Single = 74.0F
-    Private Const SearchVerticalPadding As Single = 20.0F
-    Private Const CompactSearchWidth As Single = 1180.0F
 
     Private ReadOnly _presetPath As ModernTextBox
-    Private ReadOnly _outputDirectory As ModernTextBox
     Private ReadOnly _scoreMetric As ModernComboBox
-    Private ReadOnly _targetScore As ModernTextBox
-    Private ReadOnly _minCrf As ModernTextBox
-    Private ReadOnly _maxCrf As ModernTextBox
+    Private ReadOnly _crf As ModernTextBox
     Private ReadOnly _samples As ModernTextBox
     Private ReadOnly _sampleDuration As ModernTextBox
-    Private ReadOnly _thorough As ModernCheckBox
     Private ReadOnly _vmafModel As ModernComboBox
     Private ReadOnly _fileList As UltraDetailListView
     Private ReadOnly _presetSummary As Label
@@ -55,67 +50,40 @@ Public NotInheritable Class MainPanel
     Private ReadOnly _taskContextMenu As ModernContextMenu
     Private ReadOnly _progressRenderTimer As System.Windows.Forms.Timer
     Private ReadOnly _detailFont As Font
-    Private ReadOnly _tabControl As ModernTabControl
-    Private ReadOnly _sampleEncodePanel As SampleEncodePanel
-    Private ReadOnly ModernPanel1 As ModernPanel
     Private _vmafModelRow As TableLayoutPanel
-    Private _searchParametersLayout As TableLayoutPanel
-    Private _searchFields As Control()
-    Private _searchRootRowStyle As RowStyle
-    Private _searchParameterRowsStyle As RowStyle
-    Private _searchModelRowStyle As RowStyle
-    Private _searchLayoutCompact As Boolean?
+    Private _modelRowStyle As RowStyle
 
-    Private ReadOnly _items As New List(Of QueueFileItem)()
+    Private ReadOnly _items As New List(Of SampleQueueFileItem)()
     Private ReadOnly _lifetimeCancellation As New CancellationTokenSource()
-    Private _activeItem As QueueFileItem
-    Private _contextMenuTarget As QueueFileItem
+    Private _activeItem As SampleQueueFileItem
+    Private _contextMenuTarget As SampleQueueFileItem
     Private _schedulerTask As Task
     Private _running As Boolean
     Private _scanningModels As Boolean
     Private _initialModelScanStarted As Boolean
-    Private _pendingProgressItem As QueueFileItem
+    Private _pendingProgressItem As SampleQueueFileItem
     Private _pendingProgressStatus As String
-    Private _pendingProgressCrf As String
     Private _pendingProgressScore As String
-    Private _previousMetric As QualityMetric = QualityMetric.Vmaf
 
     Public Sub New()
         SuspendLayout()
         DoubleBuffered = True
-        BackColor = ColorBackground
+        BackColor = Color.Transparent
         ForeColor = ColorText
         Font = New Font("Microsoft YaHei UI", 10.0F)
         _detailFont = New Font("Microsoft YaHei UI", 8.5F)
         Dock = DockStyle.Fill
         AllowDrop = True
-        MinimumSize = New Size(900, 720)
         Padding = Padding.Empty
 
         _presetPath = CreateTextBox("选择 FFmpegFreeUI v6 JSON 预设")
-        _outputDirectory = CreateTextBox("留空则输出到输入文件目录")
         _scoreMetric = CreateMetricComboBox()
-        _targetScore = CreateTextBox("95")
-        _targetScore.Text = "95"
-        _minCrf = CreateTextBox("5")
-        _minCrf.Text = "5"
-        _maxCrf = CreateTextBox("55")
-        _maxCrf.Text = "55"
+        _crf = CreateTextBox("要评估的 CRF")
+        _crf.Text = "30"
         _samples = CreateTextBox("留空使用 ab-av1 自动采样")
         _sampleDuration = CreateTextBox("20s")
         _sampleDuration.Text = "20s"
         _vmafModel = CreateComboBox("留空使用 ab-av1 自动模型；也可直接输入模型名称")
-
-        _thorough = New ModernCheckBox With {
-            .Text = "彻底搜索",
-            .SubText = "搜索到更贴近目标值",
-            .ForeColor = ColorText,
-            .SubTextForeColor = ColorMuted,
-            .Checked = False,
-            .ClickAnywhere = True,
-            .Dock = DockStyle.Fill,
-            .Margin = New Padding(10, 4, 0, 4)
-        }
 
         _fileList = CreateFileList()
         _fileList.AllowDrop = True
@@ -144,58 +112,34 @@ Public NotInheritable Class MainPanel
         _refreshModelsButton = CreateButton("扫描模型", AddressOf RefreshModels)
         _browseModelButton = CreateButton("本地 JSON", AddressOf BrowseVmafModel)
         _copyCommandLineButton = CreateButton("复制命令行", AddressOf CopyCommandLineTemplate)
-        _startButton = CreateButton("开始搜索队列", AddressOf StartQueue, accent:=True)
+        _startButton = CreateButton("开始样本队列", AddressOf StartQueue, accent:=True)
         _taskContextMenu = CreateTaskContextMenu()
         _progressRenderTimer = New System.Windows.Forms.Timer With {
             .Interval = ProgressRenderIntervalMilliseconds
         }
         AddHandler _progressRenderTimer.Tick, AddressOf ProgressRenderTimerTick
-        _sampleEncodePanel = New SampleEncodePanel With {
-            .Dock = DockStyle.Fill,
-            .Margin = Padding.Empty,
-            .BackColor = Color.Transparent
-        }
-        _tabControl = CreatePageTabs(BuildLayout(), _sampleEncodePanel)
 
-        '3FUI 会寻找名为 ModernPanel1 且 Dock=Fill 的 LakeUI.ModernPanel，
-        '并在启用个性化背景时自动设置透明背景和 BackgroundSource。
-        ModernPanel1 = New ModernPanel With {
-            .Name = "ModernPanel1",
-            .Dock = DockStyle.Fill,
-            .Margin = Padding.Empty,
-            .Padding = New Padding(24, 20, 24, 18),
-            .BackColor = Color.Transparent,
-            .BackColor1 = ColorBackground,
-            .BorderSize = 0,
-            .BorderRadius = 0,
-            .AllowDrop = True
-        }
-        ModernPanel1.SuspendLayout()
-        ModernPanel1.Controls.Add(_tabControl)
-        Controls.Add(ModernPanel1)
+        Dim root = BuildLayout()
+        Controls.Add(root)
 
         AddHandler _presetPath.LostFocus, AddressOf PresetPathLostFocus
         AddHandler _scoreMetric.SelectedIndexChanged, AddressOf ScoreMetricChanged
         AddHandler _fileList.SelectedIndexChanged, AddressOf QueueSelectionChanged
         AddHandler _fileList.KeyDown, AddressOf QueueKeyDown
         AddHandler _fileList.MouseUp, AddressOf QueueMouseUp
-        AddHandler Me.Load, AddressOf MainPanelLoad
+        AddHandler Me.Load, AddressOf SampleEncodePanelLoad
         AddHandler Me.DragEnter, AddressOf FilesDragEnter
         AddHandler Me.DragOver, AddressOf FilesDragOver
         AddHandler Me.DragDrop, AddressOf FilesDragDrop
-        AddHandler ModernPanel1.DragEnter, AddressOf FilesDragEnter
-        AddHandler ModernPanel1.DragOver, AddressOf FilesDragOver
-        AddHandler ModernPanel1.DragDrop, AddressOf FilesDragDrop
         AddHandler _fileList.DragEnter, AddressOf FilesDragEnter
         AddHandler _fileList.DragOver, AddressOf FilesDragOver
         AddHandler _fileList.DragDrop, AddressOf FilesDragDrop
 
-        LoadDefaults()
+        _presetPath.Text = PluginEnvironment.FindDefaultPreset()
         RefreshEnvironmentStatus()
         RefreshPresetSummary()
-        UpdateScoreMetricUi(adjustDefaultScore:=False)
+        UpdateScoreMetricUi()
         RefreshActionButtons()
-        ModernPanel1.ResumeLayout(False)
         ResumeLayout(False)
     End Sub
 
@@ -208,14 +152,13 @@ Public NotInheritable Class MainPanel
             For Each item In _items.ToArray()
                 item.Cancellation?.Cancel()
             Next
-            '异步搜索会在自己的 Finally 中释放任务 CTS。这里不能与仍在收尾的任务并发 Dispose。
             _taskContextMenu.Dispose()
             _detailFont.Dispose()
         End If
         MyBase.Dispose(disposing)
     End Sub
 
-    Private Async Sub MainPanelLoad(sender As Object, e As EventArgs)
+    Private Async Sub SampleEncodePanelLoad(sender As Object, e As EventArgs)
         If _initialModelScanStarted Then Return
         _initialModelScanStarted = True
         If GetSelectedMetric() = QualityMetric.Vmaf Then Await RefreshVmafModelsAsync()
@@ -231,14 +174,12 @@ Public NotInheritable Class MainPanel
             .BackColor = Color.Transparent
         }
         root.SuspendLayout()
-        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 184))
-        _searchRootRowStyle = New RowStyle(SizeType.Absolute, 220)
-        root.RowStyles.Add(_searchRootRowStyle)
+        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 140))
+        root.RowStyles.Add(New RowStyle(SizeType.AutoSize))
         root.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
         root.RowStyles.Add(New RowStyle(SizeType.Absolute, 68))
-
         root.Controls.Add(BuildPathSection(), 0, 0)
-        root.Controls.Add(BuildSearchSection(), 0, 1)
+        root.Controls.Add(BuildSettingsSection(), 0, 1)
         root.Controls.Add(BuildFileSection(), 0, 2)
         root.Controls.Add(BuildFooter(), 0, 3)
         root.ResumeLayout(False)
@@ -249,7 +190,7 @@ Public NotInheritable Class MainPanel
         Dim layout As New TableLayoutPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 5,
-            .RowCount = 4,
+            .RowCount = 3,
             .Padding = Padding.Empty,
             .BackColor = Color.Transparent
         }
@@ -260,8 +201,7 @@ Public NotInheritable Class MainPanel
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 12))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 180))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 48))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 48))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 52))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 40))
 
         Dim topBar As New TableLayoutPanel With {
@@ -273,11 +213,10 @@ Public NotInheritable Class MainPanel
             .BackColor = Color.Transparent
         }
         topBar.SuspendLayout()
-        topBar.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 70))
-        topBar.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 30))
-        topBar.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
+        topBar.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 72))
+        topBar.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 28))
         topBar.Controls.Add(
-            CreateSectionHeading("AB-AV1 CRF 搜索", "读取 v6 预设，只替换 CRF，完成后加入 3FUI 原生队列"),
+            CreateSectionHeading("AB-AV1 样本编码", "用指定 CRF 评估样本质量与完整编码预测，不加入正式编码队列"),
             0,
             0)
         _environmentStatus.Dock = DockStyle.Fill
@@ -288,70 +227,53 @@ Public NotInheritable Class MainPanel
         layout.SetColumnSpan(topBar, 5)
 
         Dim browsePresetButton = CreateButton("选择预设", AddressOf BrowsePreset)
-        Dim browseOutputButton = CreateButton("输出目录", AddressOf BrowseOutputDirectory)
         browsePresetButton.Dock = DockStyle.Fill
-        browseOutputButton.Dock = DockStyle.Fill
         browsePresetButton.Margin = New Padding(0, 6, 12, 6)
-        browseOutputButton.Margin = New Padding(0, 6, 12, 6)
-
         layout.Controls.Add(browsePresetButton, 0, 1)
         layout.Controls.Add(_presetPath, 2, 1)
         _copyCommandLineButton.Dock = DockStyle.Fill
         _copyCommandLineButton.Margin = New Padding(0, 6, 0, 6)
         layout.Controls.Add(_copyCommandLineButton, 4, 1)
-        layout.Controls.Add(browseOutputButton, 0, 2)
-        layout.Controls.Add(_outputDirectory, 2, 2)
-        layout.SetColumnSpan(_outputDirectory, 3)
 
         Dim summaryCaption = CreateLabel("当前预设", ColorMuted, 9.5F)
         summaryCaption.Dock = DockStyle.Fill
         summaryCaption.TextAlign = ContentAlignment.MiddleLeft
-        layout.Controls.Add(summaryCaption, 0, 3)
+        layout.Controls.Add(summaryCaption, 0, 2)
         _presetSummary.Dock = DockStyle.Fill
         _presetSummary.TextAlign = ContentAlignment.MiddleLeft
-        layout.Controls.Add(_presetSummary, 2, 3)
+        layout.Controls.Add(_presetSummary, 2, 2)
         layout.SetColumnSpan(_presetSummary, 3)
         layout.ResumeLayout(False)
         Return layout
     End Function
 
-    Private Function BuildSearchSection() As Control
+    Private Function BuildSettingsSection() As Control
         Dim layout As New TableLayoutPanel With {
             .Dock = DockStyle.Fill,
-            .ColumnCount = 1,
+            .AutoSize = True,
+            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            .ColumnCount = 4,
             .RowCount = 3,
             .Padding = New Padding(0, 10, 0, 10),
             .BackColor = Color.Transparent
         }
         layout.SuspendLayout()
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, SearchHeadingHeight))
-        _searchParameterRowsStyle = New RowStyle(SizeType.Absolute, SearchParameterRowHeight)
-        layout.RowStyles.Add(_searchParameterRowsStyle)
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, SearchModelHeight))
-        _searchModelRowStyle = layout.RowStyles(2)
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 18.0F))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 18.0F))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 36.0F))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 28.0F))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 82))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 74))
+        _modelRowStyle = layout.RowStyles(2)
 
-        Dim heading = CreateSectionHeading("搜索参数", "选择 VMAF 或 XPSNR，设置目标分数、CRF 范围和采样方式")
+        Dim heading = CreateSectionHeading("样本参数", "指定 CRF、评分指标和采样方式；每个文件独立生成预测结果")
         layout.Controls.Add(heading, 0, 0)
-
-        _searchParametersLayout = New TableLayoutPanel With {
-            .Dock = DockStyle.Fill,
-            .Margin = Padding.Empty,
-            .Padding = Padding.Empty,
-            .BackColor = Color.Transparent
-        }
-        _searchFields = {
-            CreateSearchField("评分指标", _scoreMetric),
-            CreateSearchField("目标分数", _targetScore),
-            CreateSearchField("最小 CRF", _minCrf),
-            CreateSearchField("最大 CRF", _maxCrf),
-            CreateSearchField("采样数量", _samples),
-            CreateSearchField("单段时长", _sampleDuration),
-            _thorough
-        }
-        ConfigureSearchParameterLayout(compact:=False, force:=True)
-        AddHandler _searchParametersLayout.SizeChanged, AddressOf SearchParametersLayoutSizeChanged
-        layout.Controls.Add(_searchParametersLayout, 0, 1)
+        layout.SetColumnSpan(heading, 4)
+        layout.Controls.Add(CreateSettingsField("评分指标", _scoreMetric), 0, 1)
+        layout.Controls.Add(CreateSettingsField("CRF", _crf), 1, 1)
+        layout.Controls.Add(CreateSettingsField("采样数量", _samples), 2, 1)
+        layout.Controls.Add(CreateSettingsField("单段时长", _sampleDuration), 3, 1)
 
         _vmafModelRow = New TableLayoutPanel With {
             .Dock = DockStyle.Fill,
@@ -367,10 +289,8 @@ Public NotInheritable Class MainPanel
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 140))
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 140))
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 300))
-
         Dim modelCaption = CreateFieldLabel("VMAF 模型")
         modelCaption.AutoSize = False
-        modelCaption.AutoEllipsis = False
         modelCaption.TextAlign = ContentAlignment.MiddleLeft
         _vmafModelRow.Controls.Add(modelCaption, 0, 0)
         _vmafModel.Margin = New Padding(0, 5, 12, 5)
@@ -385,74 +305,11 @@ Public NotInheritable Class MainPanel
         _vmafModelStatus.TextAlign = ContentAlignment.MiddleLeft
         _vmafModelRow.Controls.Add(_vmafModelStatus, 4, 0)
         _vmafModelRow.ResumeLayout(False)
-
         layout.Controls.Add(_vmafModelRow, 0, 2)
+        layout.SetColumnSpan(_vmafModelRow, 4)
         layout.ResumeLayout(False)
         Return layout
     End Function
-
-    Private Sub SearchParametersLayoutSizeChanged(sender As Object, e As EventArgs)
-        If _searchParametersLayout Is Nothing OrElse _searchParametersLayout.ClientSize.Width <= 0 Then Return
-        ConfigureSearchParameterLayout(_searchParametersLayout.ClientSize.Width < CompactSearchWidth)
-    End Sub
-
-    Private Sub ConfigureSearchParameterLayout(compact As Boolean, Optional force As Boolean = False)
-        If _searchParametersLayout Is Nothing OrElse _searchFields Is Nothing Then Return
-        If Not force AndAlso _searchLayoutCompact.HasValue AndAlso _searchLayoutCompact.Value = compact Then Return
-
-        _searchParametersLayout.SuspendLayout()
-        Try
-            _searchParametersLayout.Controls.Clear()
-            _searchParametersLayout.ColumnStyles.Clear()
-            _searchParametersLayout.RowStyles.Clear()
-
-            If compact Then
-                _searchParametersLayout.ColumnCount = 4
-                _searchParametersLayout.RowCount = 2
-                For index = 1 To 4
-                    _searchParametersLayout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 25.0F))
-                Next
-                _searchParametersLayout.RowStyles.Add(New RowStyle(SizeType.Percent, 50.0F))
-                _searchParametersLayout.RowStyles.Add(New RowStyle(SizeType.Percent, 50.0F))
-
-                For index = 0 To 3
-                    _searchParametersLayout.Controls.Add(_searchFields(index), index, 0)
-                Next
-                _searchParametersLayout.Controls.Add(_searchFields(4), 0, 1)
-                _searchParametersLayout.SetColumnSpan(_searchFields(4), 2)
-                _searchParametersLayout.Controls.Add(_searchFields(5), 2, 1)
-                _searchParametersLayout.Controls.Add(_searchFields(6), 3, 1)
-            Else
-                _searchParametersLayout.ColumnCount = 7
-                _searchParametersLayout.RowCount = 1
-                For Each columnWidth As Single In New Single() {12.0F, 12.0F, 12.0F, 12.0F, 22.0F, 14.0F, 16.0F}
-                    _searchParametersLayout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, columnWidth))
-                Next
-                _searchParametersLayout.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
-                For index = 0 To _searchFields.Length - 1
-                    _searchParametersLayout.Controls.Add(_searchFields(index), index, 0)
-                    _searchParametersLayout.SetColumnSpan(_searchFields(index), 1)
-                Next
-            End If
-        Finally
-            _searchParametersLayout.ResumeLayout(False)
-        End Try
-
-        _searchLayoutCompact = compact
-        UpdateSearchSectionHeight()
-    End Sub
-
-    Private Sub UpdateSearchSectionHeight()
-        If _searchRootRowStyle Is Nothing OrElse
-           _searchParameterRowsStyle Is Nothing OrElse
-           _searchModelRowStyle Is Nothing Then Return
-
-        Dim parameterHeight = SearchParameterRowHeight * If(_searchLayoutCompact.GetValueOrDefault(), 2.0F, 1.0F)
-        Dim modelHeight = If(GetSelectedMetric() = QualityMetric.Vmaf, SearchModelHeight, 0.0F)
-        _searchParameterRowsStyle.Height = parameterHeight
-        _searchModelRowStyle.Height = modelHeight
-        _searchRootRowStyle.Height = SearchHeadingHeight + parameterHeight + modelHeight + SearchVerticalPadding
-    End Sub
 
     Private Function BuildFileSection() As Control
         Dim layout As New TableLayoutPanel With {
@@ -466,9 +323,8 @@ Public NotInheritable Class MainPanel
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 46))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 60))
         layout.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
-
         layout.Controls.Add(
-            CreateSectionHeading("搜索任务", "运行中仍可拖入或添加文件；新任务会进入当前等待队列"),
+            CreateSectionHeading("样本任务", "运行中仍可拖入或添加文件；新任务会进入当前等待队列"),
             0,
             0)
 
@@ -485,13 +341,11 @@ Public NotInheritable Class MainPanel
             button.Margin = New Padding(0, 9, 12, 9)
             toolbar.Controls.Add(button)
         Next
-
         Dim hint = CreateLabel("选择任务后操作；未选择时【停止/暂停】作用于当前任务", ColorMuted, 9.0F)
         hint.AutoSize = True
         hint.Margin = New Padding(10, 19, 0, 0)
         toolbar.Controls.Add(hint)
         toolbar.ResumeLayout(False)
-
         layout.Controls.Add(toolbar, 0, 1)
         layout.Controls.Add(_fileList, 0, 2)
         layout.ResumeLayout(False)
@@ -510,7 +364,6 @@ Public NotInheritable Class MainPanel
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 44))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 250))
-
         _status.Dock = DockStyle.Fill
         _status.TextAlign = ContentAlignment.MiddleLeft
         _startButton.Dock = DockStyle.Fill
@@ -521,102 +374,7 @@ Public NotInheritable Class MainPanel
         Return layout
     End Function
 
-    Private Shared Function CreatePageTabs(crfSearchPage As Control,
-                                           sampleEncodePage As Control) As ModernTabControl
-        crfSearchPage.Dock = DockStyle.Fill
-        crfSearchPage.Margin = Padding.Empty
-        sampleEncodePage.Dock = DockStyle.Fill
-        sampleEncodePage.Margin = Padding.Empty
-
-        Dim tabs As New ModernTabControl With {
-            .Dock = DockStyle.Fill,
-            .Margin = Padding.Empty,
-            .Padding = Padding.Empty,
-            .BackColor = Color.Transparent,
-            .ContentBackColor = Color.Transparent,
-            .ContentBorderColor = Color.Transparent,
-            .ContentBorderWidth = 0,
-            .TabStripBackColor = Color.Transparent,
-            .TabStripOverlayColor = Color.Transparent,
-            .SeparatorColor = Color.Transparent,
-            .SeparatorWidth = 0,
-            .TabStripHeight = 46,
-            .TabStripPadding = New Padding(0, 0, 0, 4),
-            .TabSizingMode = ModernTabControl.TabSizingEnum.AutoWidth,
-            .TabAlignment = ModernTabControl.TabAlignmentEnum.Left,
-            .TabPosition = ModernTabControl.TabPositionEnum.Top,
-            .TabItemMinWidth = 112,
-            .TabItemSpacing = 4,
-            .TabItemTextPadding = 16,
-            .TabItemBorderRadius = 8,
-            .TabItemForeColor = ColorMuted,
-            .TabItemSelectedForeColor = ColorText,
-            .TabItemHoverBackColor = ColorControl,
-            .TabItemSelectedBackColor = ColorControl,
-            .IndicatorColor = ColorAccent,
-            .IndicatorHeight = 3,
-            .IndicatorPadding = 10,
-            .IndicatorBorderRadius = 2,
-            .AnimationDuration = 120,
-            .AnimationFPS = 60,
-            .SuppressBoundPageRefreshOnSwitch = True
-        }
-        tabs.Items.Add(New ModernTabControl.ModernTab("CRF 搜索") With {
-            .BoundControl = crfSearchPage
-        })
-        tabs.Items.Add(New ModernTabControl.ModernTab("样本编码") With {
-            .BoundControl = sampleEncodePage
-        })
-        tabs.SelectedIndex = 0
-        Return tabs
-    End Function
-
-    Private Shared Function CreateMetricComboBox() As ModernComboBox
-        Dim combo = CreateComboBox("选择评分指标")
-        combo.Editable = False
-        combo.Items.Add("VMAF")
-        combo.Items.Add("XPSNR")
-        combo.SelectedIndex = 0
-        Return combo
-    End Function
-
-    Private Function GetSelectedMetric() As QualityMetric
-        Return If(_scoreMetric.SelectedIndex = 1 OrElse
-                  String.Equals(_scoreMetric.Text.Trim(), "XPSNR", StringComparison.OrdinalIgnoreCase),
-                  QualityMetric.Xpsnr,
-                  QualityMetric.Vmaf)
-    End Function
-
-    Private Sub ScoreMetricChanged(sender As Object, e As EventArgs)
-        UpdateScoreMetricUi(adjustDefaultScore:=True)
-    End Sub
-
-    Private Sub UpdateScoreMetricUi(adjustDefaultScore As Boolean)
-        If _vmafModelRow Is Nothing OrElse _searchModelRowStyle Is Nothing Then Return
-
-        Dim metric = GetSelectedMetric()
-        If adjustDefaultScore AndAlso metric <> _previousMetric Then
-            Dim score As Double
-            If TryParseNumber(_targetScore.Text, score) Then
-                If _previousMetric = QualityMetric.Vmaf AndAlso Math.Abs(score - 95) < 0.0001 Then
-                    _targetScore.Text = "42"
-                ElseIf _previousMetric = QualityMetric.Xpsnr AndAlso Math.Abs(score - 42) < 0.0001 Then
-                    _targetScore.Text = "95"
-                End If
-            End If
-        End If
-
-        Dim showModel = metric = QualityMetric.Vmaf
-        _vmafModelRow.Visible = showModel
-        _vmafModel.Enabled = showModel AndAlso Not _running
-        _refreshModelsButton.Enabled = showModel AndAlso Not _running AndAlso Not _scanningModels
-        _browseModelButton.Enabled = showModel AndAlso Not _running
-        _previousMetric = metric
-        UpdateSearchSectionHeight()
-        _vmafModelRow.Parent?.PerformLayout()
-    End Sub
-
-    Private Shared Function CreateSearchField(caption As String, editor As Control) As Control
+    Private Shared Function CreateSettingsField(caption As String, editor As Control) As Control
         Dim layout As New TableLayoutPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
@@ -636,10 +394,6 @@ Public NotInheritable Class MainPanel
         layout.ResumeLayout(False)
         Return layout
     End Function
-
-    Private Sub LoadDefaults()
-        _presetPath.Text = PluginEnvironment.FindDefaultPreset()
-    End Sub
 
     Private Sub RefreshEnvironmentStatus()
         If File.Exists(PluginEnvironment.AbAv1Path) Then
@@ -682,7 +436,6 @@ Public NotInheritable Class MainPanel
                 Dim defaultDirectory = Path.Combine(Application.StartupPath, "Preset_v6", "User")
                 If Directory.Exists(defaultDirectory) Then dialog.InitialDirectory = defaultDirectory
             End If
-
             If dialog.ShowDialog(FindForm()) = DialogResult.OK Then
                 _presetPath.Text = dialog.FileName
                 RefreshPresetSummary()
@@ -690,33 +443,43 @@ Public NotInheritable Class MainPanel
         End Using
     End Sub
 
-    Private Sub BrowseOutputDirectory(sender As Object, e As EventArgs)
-        If _running Then Return
-        Using dialog As New FolderBrowserDialog With {
-            .Description = "选择最终编码输出目录",
-            .UseDescriptionForTitle = True,
-            .ShowNewFolderButton = True
-        }
-            If Directory.Exists(_outputDirectory.Text.Trim()) Then dialog.InitialDirectory = _outputDirectory.Text.Trim()
-            If dialog.ShowDialog(FindForm()) = DialogResult.OK Then _outputDirectory.Text = dialog.SelectedPath
-        End Using
-    End Sub
-
     Private Async Sub CopyCommandLineTemplate(sender As Object, e As EventArgs)
         Try
             Dim profile = PresetProfile.Load(_presetPath.Text.Trim())
-            Dim settings = ReadSearchSettings()
-            Dim commandLine = Await AbAv1Runner.BuildCommandLineTemplateAsync(
+            Dim settings = ReadSettings()
+            Dim commandLine = Await AbAv1Runner.BuildSampleCommandLineTemplateAsync(
                 profile,
                 settings,
                 _lifetimeCancellation.Token)
             CopyCommandLineToClipboard(
                 commandLine,
-                "已复制当前预设的 ab-av1 命令行模板；<输入文件> 是待替换的路径。")
+                "已复制当前预设的 sample-encode 命令行模板；<输入文件> 是待替换的路径。")
         Catch ex As OperationCanceledException When _lifetimeCancellation.IsCancellationRequested
         Catch ex As Exception
             ShowCopyCommandLineError(ex)
         End Try
+    End Sub
+
+    Private Sub ScoreMetricChanged(sender As Object, e As EventArgs)
+        UpdateScoreMetricUi()
+    End Sub
+
+    Private Function GetSelectedMetric() As QualityMetric
+        Return If(_scoreMetric.SelectedIndex = 1 OrElse
+                  String.Equals(_scoreMetric.Text.Trim(), "XPSNR", StringComparison.OrdinalIgnoreCase),
+                  QualityMetric.Xpsnr,
+                  QualityMetric.Vmaf)
+    End Function
+
+    Private Sub UpdateScoreMetricUi()
+        If _vmafModelRow Is Nothing OrElse _modelRowStyle Is Nothing Then Return
+        Dim showModel = GetSelectedMetric() = QualityMetric.Vmaf
+        _modelRowStyle.Height = If(showModel, 74.0F, 0.0F)
+        _vmafModelRow.Visible = showModel
+        _vmafModel.Enabled = showModel AndAlso Not _running
+        _refreshModelsButton.Enabled = showModel AndAlso Not _running AndAlso Not _scanningModels
+        _browseModelButton.Enabled = showModel AndAlso Not _running
+        _vmafModelRow.Parent?.PerformLayout()
     End Sub
 
     Private Async Sub RefreshModels(sender As Object, e As EventArgs)
@@ -731,18 +494,15 @@ Public NotInheritable Class MainPanel
         _vmafModelStatus.ForeColor = ColorMuted
         _vmafModelStatus.Text = "正在扫描当前 ffmpeg…"
         Dim currentText = _vmafModel.Text
-
         Try
             Dim result = Await VmafModelScanner.ScanAsync(_lifetimeCancellation.Token, forceRefresh)
             If IsDisposed Then Return
-
             _vmafModel.Items.Clear()
             For Each model In result.Models
                 _vmafModel.Items.Add(model)
             Next
             _vmafModel.SelectedIndex = -1
             _vmafModel.Text = currentText
-
             If result.Models.Count > 0 Then
                 _vmafModelStatus.ForeColor = ColorSuccess
                 _vmafModelStatus.Text = $"发现 {result.Models.Count} 个 · {Path.GetFileName(result.FfmpegPath)}"
@@ -781,7 +541,7 @@ Public NotInheritable Class MainPanel
 
     Private Sub AddFiles(sender As Object, e As EventArgs)
         Using dialog As New OpenFileDialog With {
-            .Title = "选择要搜索 CRF 的媒体文件",
+            .Title = "选择要进行样本编码的媒体文件",
             .Filter = "媒体文件|*.mkv;*.mp4;*.mov;*.m4v;*.webm;*.avi;*.ts;*.m2ts;*.flv;*.wmv|所有文件 (*.*)|*.*",
             .CheckFileExists = True,
             .Multiselect = True
@@ -826,15 +586,15 @@ Public NotInheritable Class MainPanel
                 If String.IsNullOrWhiteSpace(candidate) OrElse Not File.Exists(candidate) Then Continue For
                 Dim filePath = Path.GetFullPath(candidate)
                 If _items.Any(Function(existingItem) String.Equals(existingItem.Path, filePath, StringComparison.OrdinalIgnoreCase)) Then Continue For
-
                 Dim row As New UltraDetailListView.ListItem({
                     New UltraDetailListView.ListSubItem(Path.GetFileName(filePath), Font, ColorText),
                     New UltraDetailListView.ListSubItem("等待", Font, ColorMuted),
                     New UltraDetailListView.ListSubItem("—", Font, ColorMuted),
                     New UltraDetailListView.ListSubItem("—", Font, ColorMuted),
+                    New UltraDetailListView.ListSubItem("—", Font, ColorMuted),
                     New UltraDetailListView.ListSubItem("—", Font, ColorMuted)
                 })
-                Dim item As New QueueFileItem(filePath, row)
+                Dim item As New SampleQueueFileItem(filePath, row)
                 row.Tag = item
                 SetBottomLine(item, filePath, ColorMuted)
                 _fileList.Items.Add(row)
@@ -844,7 +604,6 @@ Public NotInheritable Class MainPanel
         Finally
             _fileList.EndUpdate()
         End Try
-
         RefreshActionButtons()
         Return added
     End Function
@@ -871,24 +630,18 @@ Public NotInheritable Class MainPanel
             If Not File.Exists(PluginEnvironment.AbAv1Path) Then
                 Throw New FileNotFoundException("请将 ab-av1.exe 放到插件 DLL 同一目录。", PluginEnvironment.AbAv1Path)
             End If
-            If Not _items.Any(Function(item) item.State = SearchTaskState.Pending) Then
+            If Not _items.Any(Function(item) item.State = SampleTaskState.Pending) Then
                 Throw New InvalidOperationException("没有等待中的任务；可添加文件或先重置任务状态。")
             End If
-
             Dim profile = PresetProfile.Load(_presetPath.Text.Trim())
-            Dim settings = ReadSearchSettings()
-            Dim outputDirectory = _outputDirectory.Text.Trim()
-            If outputDirectory.Length > 0 AndAlso Not Directory.Exists(outputDirectory) Then
-                Throw New DirectoryNotFoundException($"输出目录不存在：{outputDirectory}")
-            End If
-
+            Dim settings = ReadSettings()
             SetRunning(True)
-            _schedulerTask = RunQueueAsync(profile, settings, outputDirectory)
+            _schedulerTask = RunQueueAsync(profile, settings)
             Await _schedulerTask
         Catch ex As OperationCanceledException When _lifetimeCancellation.IsCancellationRequested
         Catch ex As Exception
             UpdateStatus("无法开始：" & CompactMessage(ex.Message))
-            MessageBox.Show(FindForm(), ex.Message, "AB-AV1", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            MessageBox.Show(FindForm(), ex.Message, "AB-AV1 样本编码", MessageBoxButtons.OK, MessageBoxIcon.Warning)
         Finally
             _schedulerTask = Nothing
             If Not IsDisposed Then SetRunning(False)
@@ -896,37 +649,35 @@ Public NotInheritable Class MainPanel
     End Sub
 
     Private Async Function RunQueueAsync(profile As PresetProfile,
-                                         settings As SearchSettings,
-                                         outputDirectory As String) As Task
+                                         settings As SampleEncodeSettings) As Task
         While Not _lifetimeCancellation.IsCancellationRequested
-            Dim item = _items.FirstOrDefault(Function(value) value.State = SearchTaskState.Pending)
+            Dim item = _items.FirstOrDefault(Function(value) value.State = SampleTaskState.Pending)
             If item Is Nothing Then
-                '让运行中刚好发生的拖放事件有机会把新任务加入等待队列。
                 Await Task.Yield()
-                item = _items.FirstOrDefault(Function(value) value.State = SearchTaskState.Pending)
+                item = _items.FirstOrDefault(Function(value) value.State = SampleTaskState.Pending)
                 If item Is Nothing Then Exit While
             End If
-            Await RunQueueItemAsync(item, profile, settings, outputDirectory)
+            Await RunQueueItemAsync(item, profile, settings)
         End While
 
         If Not IsDisposed Then
-            Dim enqueued = _items.Where(Function(value) value.State = SearchTaskState.Enqueued).Count()
-            Dim failed = _items.Where(Function(value) value.State = SearchTaskState.Failed).Count()
-            Dim stopped = _items.Where(Function(value) value.State = SearchTaskState.Stopped).Count()
-            UpdateStatus($"搜索队列结束：{enqueued} 个已入队，{failed} 个失败，{stopped} 个已停止")
+            Dim completed = _items.Where(Function(value) value.State = SampleTaskState.Completed).Count()
+            Dim failed = _items.Where(Function(value) value.State = SampleTaskState.Failed).Count()
+            Dim stopped = _items.Where(Function(value) value.State = SampleTaskState.Stopped).Count()
+            UpdateStatus($"样本队列结束：{completed} 个完成，{failed} 个失败，{stopped} 个已停止")
         End If
     End Function
 
-    Private Async Function RunQueueItemAsync(item As QueueFileItem,
+    Private Async Function RunQueueItemAsync(item As SampleQueueFileItem,
                                              profile As PresetProfile,
-                                             settings As SearchSettings,
-                                             outputDirectory As String) As Task
+                                             settings As SampleEncodeSettings) As Task
         _activeItem = item
         item.Runner = New AbAv1Runner()
         item.Cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token)
-        SetTaskState(item, SearchTaskState.Running)
+        item.Row.SubItems(2).Text = SearchSettings.FormatNumber(settings.Crf)
+        SetTaskState(item, SampleTaskState.Running)
         SetBottomLine(item, item.Path, ColorMuted)
-        UpdateStatus($"{Path.GetFileName(item.Path)} · 正在启动 ab-av1")
+        UpdateStatus($"{Path.GetFileName(item.Path)} · 正在启动 ab-av1 sample-encode")
         RefreshRows({item})
         RefreshActionButtons()
 
@@ -936,39 +687,34 @@ Public NotInheritable Class MainPanel
                 If IsDisposed Then Return
                 QueueProgressRender(localItem, update)
             End Sub)
-
         Try
-            Dim result = Await item.Runner.SearchAsync(profile, item.Path, settings, progress, item.Cancellation.Token)
-            Dim outputPath = PluginEnvironment.BuildOutputPath(item.Path, outputDirectory, profile.OutputContainer, result.Crf)
-            Dim temporaryPreset As String = Nothing
-            Try
-                temporaryPreset = profile.CreateTemporaryPreset(result.Crf)
-                Entry.EnqueuePresetTask(
-                    temporaryPreset,
-                    $"{Path.GetFileName(item.Path)} · CRF {SearchSettings.FormatNumber(result.Crf)}",
-                    outputPath,
-                    item.Path)
-            Finally
-                If temporaryPreset IsNot Nothing AndAlso File.Exists(temporaryPreset) Then File.Delete(temporaryPreset)
-            End Try
-
+            Dim result = Await item.Runner.SampleEncodeAsync(
+                profile,
+                item.Path,
+                settings,
+                progress,
+                item.Cancellation.Token)
             item.Result = result
-            item.OutputPath = outputPath
             item.Row.SubItems(2).Text = SearchSettings.FormatNumber(result.Crf)
             item.Row.SubItems(3).Text = FormatMetricScore(result.Metric, result.Score)
             item.Row.SubItems(4).Text = PluginEnvironment.FormatBytes(result.PredictedEncodeSize)
-            SetTaskState(item, SearchTaskState.Enqueued)
-            SetBottomLine(item, $"输出：{outputPath}", ColorMuted)
+            item.Row.SubItems(5).Text = FormatDuration(result.PredictedEncodeSeconds)
+            SetTaskState(item, SampleTaskState.Completed)
+
+            Dim detail = $"预测完整编码：{PluginEnvironment.FormatBytes(result.PredictedEncodeSize)}"
+            If result.PredictedEncodeSeconds > 0 Then detail &= $" · {FormatDuration(result.PredictedEncodeSeconds)}"
+            If result.PredictedEncodePercent > 0 Then detail &= $" · 输入大小的 {result.PredictedEncodePercent.ToString("0.##", CultureInfo.InvariantCulture)}%"
+            SetBottomLine(item, detail, ColorMuted)
         Catch ex As OperationCanceledException
-            SetTaskState(item, SearchTaskState.Stopped)
-            SetBottomLine(item, "任务已停止；可重置后重新搜索", ColorWarning)
+            SetTaskState(item, SampleTaskState.Stopped)
+            SetBottomLine(item, "任务已停止；可重置后重新评估", ColorWarning)
         Catch ex As Exception
-            If item.Cancellation.IsCancellationRequested Then
-                SetTaskState(item, SearchTaskState.Stopped)
-                SetBottomLine(item, "任务已停止；可重置后重新搜索", ColorWarning)
+            If item.Cancellation IsNot Nothing AndAlso item.Cancellation.IsCancellationRequested Then
+                SetTaskState(item, SampleTaskState.Stopped)
+                SetBottomLine(item, "任务已停止；可重置后重新评估", ColorWarning)
             Else
                 item.ErrorMessage = ex.Message
-                SetTaskState(item, SearchTaskState.Failed)
+                SetTaskState(item, SampleTaskState.Failed)
                 SetBottomLine(item, CompactMessage(ex.Message), ColorDanger)
             End If
         Finally
@@ -976,7 +722,7 @@ Public NotInheritable Class MainPanel
             If item.Runner IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(item.Runner.CurrentCommandLine) Then
                 item.CommandLine = item.Runner.CurrentCommandLine
             End If
-            item.Cancellation.Dispose()
+            item.Cancellation?.Dispose()
             item.Cancellation = Nothing
             item.Runner = Nothing
             If Object.ReferenceEquals(_activeItem, item) Then _activeItem = Nothing
@@ -993,71 +739,67 @@ Public NotInheritable Class MainPanel
             UpdateStatus("请选择要停止的任务，或等待任务开始运行。")
             Return
         End If
-
         Dim changed = 0
         For Each item In targets
             Select Case item.State
-                Case SearchTaskState.Pending
-                    SetTaskState(item, SearchTaskState.Stopped)
-                    SetBottomLine(item, "任务未启动即被停止；可重置后重新搜索", ColorWarning)
+                Case SampleTaskState.Pending
+                    SetTaskState(item, SampleTaskState.Stopped)
+                    SetBottomLine(item, "任务未启动即被停止；可重置后重新评估", ColorWarning)
                     changed += 1
-                Case SearchTaskState.Running, SearchTaskState.Paused
-                    SetTaskState(item, SearchTaskState.Stopping)
+                Case SampleTaskState.Running, SampleTaskState.Paused
+                    SetTaskState(item, SampleTaskState.Stopping)
                     item.Cancellation?.Cancel()
                     changed += 1
             End Select
         Next
-        If changed > 0 Then UpdateStatus($"正在停止 {changed} 个任务…")
-        If changed > 0 Then RefreshRows(targets)
+        If changed > 0 Then
+            UpdateStatus($"正在停止 {changed} 个任务…")
+            RefreshRows(targets)
+        End If
         RefreshActionButtons()
     End Sub
 
     Private Sub PauseOrResumeTasks(sender As Object, e As EventArgs)
         Dim targets = GetOperationTargets(fallbackToActive:=True)
         Dim activeTargets = targets.Where(
-            Function(item) item.State = SearchTaskState.Running OrElse
-                           item.State = SearchTaskState.Paused).ToList()
+            Function(item) item.State = SampleTaskState.Running OrElse
+                           item.State = SampleTaskState.Paused).ToList()
         If activeTargets.Count = 0 Then
             UpdateStatus("请选择正在运行或已暂停的任务。")
             Return
         End If
-
-        '只要可操作的选择中仍有运行项，本次点击就统一执行“暂停”；
-        '只有所有可操作项均已暂停时才执行“恢复”。等待/结束项始终忽略。
-        Dim shouldPause = activeTargets.Any(Function(item) item.State = SearchTaskState.Running)
+        Dim shouldPause = activeTargets.Any(Function(item) item.State = SampleTaskState.Running)
         Dim changed = 0
         Dim lastError = String.Empty
         For Each item In activeTargets
             If item.Runner Is Nothing Then Continue For
-            If shouldPause AndAlso item.State = SearchTaskState.Running Then
-                Dim errorMessage As String = Nothing
+            Dim errorMessage As String = Nothing
+            If shouldPause AndAlso item.State = SampleTaskState.Running Then
                 If item.Runner.TryPause(errorMessage) Then
-                    SetTaskState(item, SearchTaskState.Paused)
+                    SetTaskState(item, SampleTaskState.Paused)
                     changed += 1
                 Else
                     lastError = errorMessage
                 End If
-            ElseIf Not shouldPause AndAlso item.State = SearchTaskState.Paused Then
-                Dim errorMessage As String = Nothing
+            ElseIf Not shouldPause AndAlso item.State = SampleTaskState.Paused Then
                 If item.Runner.TryResume(errorMessage) Then
-                    SetTaskState(item, SearchTaskState.Running)
+                    SetTaskState(item, SampleTaskState.Running)
                     changed += 1
                 Else
                     lastError = errorMessage
                 End If
             End If
         Next
-
         If changed > 0 Then
             UpdateStatus(If(shouldPause,
                             $"已暂停 {changed} 个运行任务；其他状态的任务未受影响。",
                             $"已恢复 {changed} 个暂停任务；其他状态的任务未受影响。"))
+            RefreshRows(activeTargets)
         ElseIf lastError <> "" Then
             UpdateStatus("无法切换状态：" & CompactMessage(lastError))
         Else
             UpdateStatus("所选任务中没有可执行此操作的活动任务。")
         End If
-        If changed > 0 Then RefreshRows(activeTargets)
         RefreshActionButtons()
     End Sub
 
@@ -1067,13 +809,12 @@ Public NotInheritable Class MainPanel
             UpdateStatus("请先选择要移除的任务。")
             Return
         End If
-        If targets.Any(Function(item) item.State = SearchTaskState.Running OrElse
-                                      item.State = SearchTaskState.Paused OrElse
-                                      item.State = SearchTaskState.Stopping) Then
+        If targets.Any(Function(item) item.State = SampleTaskState.Running OrElse
+                                       item.State = SampleTaskState.Paused OrElse
+                                       item.State = SampleTaskState.Stopping) Then
             UpdateStatus("运行中、已暂停或正在停止的任务不能直接移除；请先停止。")
             Return
         End If
-
         _fileList.BeginUpdate()
         Try
             For Each item In targets
@@ -1093,27 +834,23 @@ Public NotInheritable Class MainPanel
             UpdateStatus("请先选择要重置状态的任务。")
             Return
         End If
-
         Dim changed = 0
         For Each item In targets
-            If item.State = SearchTaskState.Running OrElse
-               item.State = SearchTaskState.Paused OrElse
-               item.State = SearchTaskState.Stopping Then Continue For
-
+            If item.State = SampleTaskState.Running OrElse
+               item.State = SampleTaskState.Paused OrElse
+               item.State = SampleTaskState.Stopping Then Continue For
             item.Result = Nothing
-            item.OutputPath = String.Empty
             item.ErrorMessage = String.Empty
             item.CommandLine = String.Empty
-            item.Row.SubItems(2).Text = "—"
-            item.Row.SubItems(3).Text = "—"
-            item.Row.SubItems(4).Text = "—"
-            SetTaskState(item, SearchTaskState.Pending)
+            For index = 2 To 5
+                item.Row.SubItems(index).Text = "—"
+            Next
+            SetTaskState(item, SampleTaskState.Pending)
             SetBottomLine(item, item.Path, ColorMuted)
             changed += 1
         Next
-
-        If changed > 0 Then RefreshRows(targets)
         If changed > 0 Then
+            RefreshRows(targets)
             UpdateStatus($"已重置 {changed} 个任务；运行中的队列会自动继续处理。")
         Else
             UpdateStatus("所选任务正在运行，无法重置。")
@@ -1130,68 +867,55 @@ Public NotInheritable Class MainPanel
 
     Private Sub QueueMouseUp(sender As Object, e As MouseEventArgs)
         If e.Button <> MouseButtons.Right Then Return
-
         _contextMenuTarget = Nothing
         Dim hitIndex = _fileList.HitTest(e.X, e.Y)
         If hitIndex >= 0 Then
-            _contextMenuTarget = TryCast(_fileList.Items(hitIndex).Tag, QueueFileItem)
-            If Not _fileList.SelectedIndices.Contains(hitIndex) Then
-                '右键未选中的项目时，让菜单明确作用于该项目；右键已有选择则保留多选。
-                _fileList.SelectedIndex = hitIndex
-            End If
+            _contextMenuTarget = TryCast(_fileList.Items(hitIndex).Tag, SampleQueueFileItem)
+            If Not _fileList.SelectedIndices.Contains(hitIndex) Then _fileList.SelectedIndex = hitIndex
         End If
-
         RebuildTaskContextMenu()
-        If _taskContextMenu.Items.Count > 0 Then
-            _taskContextMenu.Show(_fileList, e.X, e.Y)
-        End If
+        If _taskContextMenu.Items.Count > 0 Then _taskContextMenu.Show(_fileList, e.X, e.Y)
     End Sub
 
     Private Sub RebuildTaskContextMenu()
         _taskContextMenu.Items.Clear()
-
         Dim selected = GetSelectedQueueItems()
         Dim targets = GetOperationTargets(fallbackToActive:=True)
         Dim activeTargets = targets.Where(
-            Function(item) item.State = SearchTaskState.Running OrElse
-                           item.State = SearchTaskState.Paused).ToList()
+            Function(item) item.State = SampleTaskState.Running OrElse
+                           item.State = SampleTaskState.Paused).ToList()
 
         If _contextMenuTarget IsNot Nothing Then
             AddTaskContextMenuItem("复制此任务的完整命令行", AddressOf CopyTaskCommandLine)
         End If
-
-        Dim hasLifecycleAction = (Not _running AndAlso _items.Any(Function(item) item.State = SearchTaskState.Pending)) OrElse
+        Dim hasLifecycleAction = (Not _running AndAlso _items.Any(Function(item) item.State = SampleTaskState.Pending)) OrElse
                                  activeTargets.Count > 0 OrElse
-                                 targets.Any(Function(item) item.State = SearchTaskState.Pending OrElse
-                                                           item.State = SearchTaskState.Running OrElse
-                                                           item.State = SearchTaskState.Paused)
+                                 targets.Any(Function(item) item.State = SampleTaskState.Pending OrElse
+                                                           item.State = SampleTaskState.Running OrElse
+                                                           item.State = SampleTaskState.Paused)
         If hasLifecycleAction AndAlso _taskContextMenu.Items.Count > 0 Then AddTaskContextMenuSeparator()
-
-        If Not _running AndAlso _items.Any(Function(item) item.State = SearchTaskState.Pending) Then
-            AddTaskContextMenuItem("开始搜索", AddressOf StartQueue)
+        If Not _running AndAlso _items.Any(Function(item) item.State = SampleTaskState.Pending) Then
+            AddTaskContextMenuItem("开始样本编码", AddressOf StartQueue)
         End If
-
-        If activeTargets.Any(Function(item) item.State = SearchTaskState.Running) Then
+        If activeTargets.Any(Function(item) item.State = SampleTaskState.Running) Then
             AddTaskContextMenuItem("暂停", AddressOf PauseOrResumeTasks)
         ElseIf activeTargets.Count > 0 Then
             AddTaskContextMenuItem("恢复", AddressOf PauseOrResumeTasks)
         End If
-
-        If targets.Any(Function(item) item.State = SearchTaskState.Pending OrElse
-                                      item.State = SearchTaskState.Running OrElse
-                                      item.State = SearchTaskState.Paused) Then
+        If targets.Any(Function(item) item.State = SampleTaskState.Pending OrElse
+                                      item.State = SampleTaskState.Running OrElse
+                                      item.State = SampleTaskState.Paused) Then
             AddTaskContextMenuItem("停止", AddressOf StopTasks, danger:=True)
         End If
-
         Dim canReset = selected.Any(
-            Function(item) item.State <> SearchTaskState.Running AndAlso
-                           item.State <> SearchTaskState.Paused AndAlso
-                           item.State <> SearchTaskState.Stopping)
+            Function(item) item.State <> SampleTaskState.Running AndAlso
+                           item.State <> SampleTaskState.Paused AndAlso
+                           item.State <> SampleTaskState.Stopping)
         Dim canRemove = selected.Count > 0 AndAlso
                         Not selected.Any(
-                            Function(item) item.State = SearchTaskState.Running OrElse
-                                           item.State = SearchTaskState.Paused OrElse
-                                           item.State = SearchTaskState.Stopping)
+                            Function(item) item.State = SampleTaskState.Running OrElse
+                                           item.State = SampleTaskState.Paused OrElse
+                                           item.State = SampleTaskState.Stopping)
         If canReset OrElse canRemove Then
             If _taskContextMenu.Items.Count > 0 Then AddTaskContextMenuSeparator()
             If canReset Then AddTaskContextMenuItem("重置所选任务状态", AddressOf ResetTasks)
@@ -1205,7 +929,6 @@ Public NotInheritable Class MainPanel
             UpdateStatus("未找到要复制命令行的任务。")
             Return
         End If
-
         Try
             Dim commandLine = item.CommandLine
             If String.IsNullOrWhiteSpace(commandLine) AndAlso item.Runner IsNot Nothing Then
@@ -1213,17 +936,16 @@ Public NotInheritable Class MainPanel
             End If
             If String.IsNullOrWhiteSpace(commandLine) Then
                 Dim profile = PresetProfile.Load(_presetPath.Text.Trim())
-                Dim settings = ReadSearchSettings()
-                commandLine = Await AbAv1Runner.BuildCommandLineAsync(
+                Dim settings = ReadSettings()
+                commandLine = Await AbAv1Runner.BuildSampleCommandLineAsync(
                     profile,
                     item.Path,
                     settings,
                     _lifetimeCancellation.Token)
             End If
-
             CopyCommandLineToClipboard(
                 commandLine,
-                $"已复制 {Path.GetFileName(item.Path)} 的完整 ab-av1 命令行。")
+                $"已复制 {Path.GetFileName(item.Path)} 的完整 sample-encode 命令行。")
         Catch ex As OperationCanceledException When _lifetimeCancellation.IsCancellationRequested
         Catch ex As Exception
             ShowCopyCommandLineError(ex)
@@ -1255,39 +977,31 @@ Public NotInheritable Class MainPanel
     End Sub
 
     Private Sub AddTaskContextMenuSeparator()
-        _taskContextMenu.Items.Add(
-            New ModernContextMenu.ModernMenuItem With {
-                .IsSeparator = True
-            })
+        _taskContextMenu.Items.Add(New ModernContextMenu.ModernMenuItem With {.IsSeparator = True})
     End Sub
 
     Private Sub QueueSelectionChanged(sender As Object, e As EventArgs)
         RefreshActionButtons()
     End Sub
 
-    Private Function GetSelectedQueueItems() As List(Of QueueFileItem)
-        Dim result As New List(Of QueueFileItem)()
+    Private Function GetSelectedQueueItems() As List(Of SampleQueueFileItem)
+        Dim result As New List(Of SampleQueueFileItem)()
         For Each row In _fileList.SelectedItems
-            Dim item = TryCast(row.Tag, QueueFileItem)
+            Dim item = TryCast(row.Tag, SampleQueueFileItem)
             If item IsNot Nothing AndAlso _items.Contains(item) Then result.Add(item)
         Next
         Return result
     End Function
 
-    Private Function GetOperationTargets(fallbackToActive As Boolean) As List(Of QueueFileItem)
+    Private Function GetOperationTargets(fallbackToActive As Boolean) As List(Of SampleQueueFileItem)
         Dim selected = GetSelectedQueueItems()
         If selected.Count = 0 AndAlso fallbackToActive AndAlso _activeItem IsNot Nothing Then selected.Add(_activeItem)
         Return selected
     End Function
 
-    Private Function ReadSearchSettings() As SearchSettings
-        Dim targetScore As Double
-        Dim minCrf As Double
-        Dim maxCrf As Double
-        If Not TryParseNumber(_targetScore.Text, targetScore) Then Throw New FormatException("目标分数不是有效数字。")
-        If Not TryParseNumber(_minCrf.Text, minCrf) Then Throw New FormatException("最小 CRF 不是有效数字。")
-        If Not TryParseNumber(_maxCrf.Text, maxCrf) Then Throw New FormatException("最大 CRF 不是有效数字。")
-
+    Private Function ReadSettings() As SampleEncodeSettings
+        Dim crf As Double
+        If Not TryParseNumber(_crf.Text, crf) Then Throw New FormatException("CRF 不是有效数字。")
         Dim sampleCount As Integer? = Nothing
         If Not String.IsNullOrWhiteSpace(_samples.Text) Then
             Dim parsed As Integer
@@ -1296,15 +1010,11 @@ Public NotInheritable Class MainPanel
             End If
             sampleCount = parsed
         End If
-
-        Dim settings As New SearchSettings With {
+        Dim settings As New SampleEncodeSettings With {
             .Metric = GetSelectedMetric(),
-            .TargetScore = targetScore,
-            .MinCrf = minCrf,
-            .MaxCrf = maxCrf,
+            .Crf = crf,
             .Samples = sampleCount,
             .SampleDuration = _sampleDuration.Text.Trim(),
-            .Thorough = _thorough.Checked,
             .VmafModel = _vmafModel.Text.Trim()
         }
         settings.Validate()
@@ -1315,19 +1025,14 @@ Public NotInheritable Class MainPanel
         _running = value
         _startButton.Enabled = Not value
         _presetPath.Enabled = Not value
-        _outputDirectory.Enabled = Not value
         _scoreMetric.Enabled = Not value
-        _targetScore.Enabled = Not value
-        _minCrf.Enabled = Not value
-        _maxCrf.Enabled = Not value
+        _crf.Enabled = Not value
         _samples.Enabled = Not value
         _sampleDuration.Enabled = Not value
-        _thorough.Enabled = Not value
         Dim useVmaf = GetSelectedMetric() = QualityMetric.Vmaf
         _vmafModel.Enabled = Not value AndAlso useVmaf
         _refreshModelsButton.Enabled = Not value AndAlso useVmaf AndAlso Not _scanningModels
         _browseModelButton.Enabled = Not value AndAlso useVmaf
-        '添加媒体和拖放在运行期间保持可用，新项目进入等待队列。
         _addFilesButton.Enabled = True
         _progressRing.Visible = value
         If value Then
@@ -1344,16 +1049,16 @@ Public NotInheritable Class MainPanel
         Dim targets = If(selected.Count > 0,
                          selected,
                          If(_activeItem Is Nothing,
-                            New List(Of QueueFileItem)(),
-                            New List(Of QueueFileItem) From {_activeItem}))
-        _stopButton.Enabled = targets.Any(Function(item) item.State = SearchTaskState.Pending OrElse
-                                                         item.State = SearchTaskState.Running OrElse
-                                                         item.State = SearchTaskState.Paused)
+                            New List(Of SampleQueueFileItem)(),
+                            New List(Of SampleQueueFileItem) From {_activeItem}))
+        _stopButton.Enabled = targets.Any(Function(item) item.State = SampleTaskState.Pending OrElse
+                                                         item.State = SampleTaskState.Running OrElse
+                                                         item.State = SampleTaskState.Paused)
         Dim activeTargets = targets.Where(
-            Function(item) item.State = SearchTaskState.Running OrElse
-                           item.State = SearchTaskState.Paused).ToList()
+            Function(item) item.State = SampleTaskState.Running OrElse
+                           item.State = SampleTaskState.Paused).ToList()
         _pauseResumeButton.Enabled = activeTargets.Count > 0
-        If activeTargets.Any(Function(item) item.State = SearchTaskState.Running) Then
+        If activeTargets.Any(Function(item) item.State = SampleTaskState.Running) Then
             _pauseResumeButton.Text = "暂停"
         ElseIf activeTargets.Count > 0 Then
             _pauseResumeButton.Text = "恢复"
@@ -1361,38 +1066,38 @@ Public NotInheritable Class MainPanel
             _pauseResumeButton.Text = "暂停 / 恢复"
         End If
         _removeButton.Enabled = selected.Count > 0 AndAlso
-                                Not selected.Any(Function(item) item.State = SearchTaskState.Running OrElse
-                                                               item.State = SearchTaskState.Paused OrElse
-                                                               item.State = SearchTaskState.Stopping)
-        _resetButton.Enabled = selected.Any(Function(item) item.State <> SearchTaskState.Running AndAlso
-                                                           item.State <> SearchTaskState.Paused AndAlso
-                                                           item.State <> SearchTaskState.Stopping)
+                                Not selected.Any(Function(item) item.State = SampleTaskState.Running OrElse
+                                                               item.State = SampleTaskState.Paused OrElse
+                                                               item.State = SampleTaskState.Stopping)
+        _resetButton.Enabled = selected.Any(Function(item) item.State <> SampleTaskState.Running AndAlso
+                                                           item.State <> SampleTaskState.Paused AndAlso
+                                                           item.State <> SampleTaskState.Stopping)
     End Sub
 
-    Private Sub SetTaskState(item As QueueFileItem, state As SearchTaskState)
+    Private Sub SetTaskState(item As SampleQueueFileItem, state As SampleTaskState)
         item.State = state
         Dim text As String
         Dim color As Color
         Select Case state
-            Case SearchTaskState.Pending
+            Case SampleTaskState.Pending
                 text = "等待"
                 color = ColorMuted
-            Case SearchTaskState.Running
-                text = "搜索中"
+            Case SampleTaskState.Running
+                text = "样本编码中"
                 color = ColorAccent
-            Case SearchTaskState.Paused
+            Case SampleTaskState.Paused
                 text = "已暂停"
                 color = ColorWarning
-            Case SearchTaskState.Stopping
+            Case SampleTaskState.Stopping
                 text = "正在停止"
                 color = ColorWarning
-            Case SearchTaskState.Enqueued
-                text = "已入队"
+            Case SampleTaskState.Completed
+                text = "已完成"
                 color = ColorSuccess
-            Case SearchTaskState.Failed
+            Case SampleTaskState.Failed
                 text = "失败"
                 color = ColorDanger
-            Case SearchTaskState.Stopped
+            Case SampleTaskState.Stopped
                 text = "已停止"
                 color = ColorWarning
             Case Else
@@ -1403,20 +1108,16 @@ Public NotInheritable Class MainPanel
         item.Row.SubItems(1).ForeColor = color
     End Sub
 
-    Private Sub SetBottomLine(item As QueueFileItem, text As String, color As Color)
+    Private Sub SetBottomLine(item As SampleQueueFileItem, text As String, color As Color)
         item.Row.BottomLines.Clear()
         item.Row.BottomLines.Add(New UltraDetailListView.TextLine(text, _detailFont, color))
     End Sub
 
-    Private Sub QueueProgressRender(item As QueueFileItem, update As SearchProgress)
+    Private Sub QueueProgressRender(item As SampleQueueFileItem, update As SearchProgress)
         If IsDisposed OrElse item Is Nothing OrElse Not _items.Contains(item) Then Return
-        If item.State <> SearchTaskState.Running AndAlso item.State <> SearchTaskState.Paused Then Return
-
+        If item.State <> SampleTaskState.Running AndAlso item.State <> SampleTaskState.Paused Then Return
         _pendingProgressItem = item
         _pendingProgressStatus = $"{Path.GetFileName(item.Path)} · {CompactMessage(update.Message)}"
-        If update.TestedCrf.HasValue Then
-            _pendingProgressCrf = SearchSettings.FormatNumber(update.TestedCrf.Value)
-        End If
         If update.TestedScore.HasValue Then
             Dim metric = If(update.Metric.HasValue, update.Metric.Value, GetSelectedMetric())
             _pendingProgressScore = FormatMetricScore(metric, update.TestedScore.Value)
@@ -1431,47 +1132,33 @@ Public NotInheritable Class MainPanel
 
     Private Sub FlushPendingProgressRender()
         If IsDisposed Then Return
-
         Dim item = _pendingProgressItem
         Dim statusText = _pendingProgressStatus
-        Dim crfText = _pendingProgressCrf
         Dim scoreText = _pendingProgressScore
         _pendingProgressItem = Nothing
         _pendingProgressStatus = Nothing
-        _pendingProgressCrf = Nothing
         _pendingProgressScore = Nothing
-
         If statusText IsNot Nothing Then UpdateStatus(statusText)
         If item Is Nothing OrElse Not _items.Contains(item) Then Return
-        If item.State <> SearchTaskState.Running AndAlso item.State <> SearchTaskState.Paused Then Return
-
-        Dim changed = False
-        If crfText IsNot Nothing AndAlso item.Row.SubItems(2).Text <> crfText Then
-            item.Row.SubItems(2).Text = crfText
-            changed = True
-        End If
+        If item.State <> SampleTaskState.Running AndAlso item.State <> SampleTaskState.Paused Then Return
         If scoreText IsNot Nothing AndAlso item.Row.SubItems(3).Text <> scoreText Then
             item.Row.SubItems(3).Text = scoreText
-            changed = True
+            RefreshRows({item})
         End If
-        If changed Then RefreshRows({item})
     End Sub
 
-    Private Sub ClearPendingProgress(item As QueueFileItem)
+    Private Sub ClearPendingProgress(item As SampleQueueFileItem)
         If Not Object.ReferenceEquals(_pendingProgressItem, item) Then Return
         If Not IsDisposed Then _progressRenderTimer.Stop()
         _pendingProgressItem = Nothing
         _pendingProgressStatus = Nothing
-        _pendingProgressCrf = Nothing
         _pendingProgressScore = Nothing
     End Sub
 
-    Private Sub RefreshRows(items As IEnumerable(Of QueueFileItem))
+    Private Sub RefreshRows(items As IEnumerable(Of SampleQueueFileItem))
         If IsDisposed OrElse items Is Nothing Then Return
-        Dim targets = items.Where(
-            Function(item) item IsNot Nothing AndAlso _items.Contains(item)).Distinct().ToList()
+        Dim targets = items.Where(Function(item) item IsNot Nothing AndAlso _items.Contains(item)).Distinct().ToList()
         If targets.Count = 0 Then Return
-
         _fileList.BeginUpdate()
         Try
             For Each item In targets
@@ -1485,8 +1172,7 @@ Public NotInheritable Class MainPanel
     Private Sub UpdateStatus(message As String)
         If IsDisposed Then Return
         Dim text = CompactMessage(message)
-        If String.Equals(_status.Text, text, StringComparison.Ordinal) Then Return
-        _status.Text = text
+        If Not String.Equals(_status.Text, text, StringComparison.Ordinal) Then _status.Text = text
     End Sub
 
     Private Shared Function CompactMessage(message As String) As String
@@ -1503,6 +1189,14 @@ Public NotInheritable Class MainPanel
 
     Private Shared Function FormatMetricScore(metric As QualityMetric, score As Double) As String
         Return $"{GetMetricDisplayName(metric)} {score.ToString("0.###", CultureInfo.InvariantCulture)}"
+    End Function
+
+    Private Shared Function FormatDuration(seconds As Double) As String
+        If Double.IsNaN(seconds) OrElse Double.IsInfinity(seconds) OrElse seconds <= 0 Then Return "—"
+        Dim duration = TimeSpan.FromSeconds(seconds)
+        If duration.TotalDays >= 1 Then Return $"{CInt(Math.Floor(duration.TotalDays))}天 {duration:hh\:mm\:ss}"
+        If duration.TotalHours >= 1 Then Return duration.ToString("h\:mm\:ss", CultureInfo.InvariantCulture)
+        Return duration.ToString("m\:ss", CultureInfo.InvariantCulture)
     End Function
 
     Private Shared Function CreateTaskContextMenu() As ModernContextMenu
@@ -1576,6 +1270,15 @@ Public NotInheritable Class MainPanel
         }
     End Function
 
+    Private Shared Function CreateMetricComboBox() As ModernComboBox
+        Dim combo = CreateComboBox("选择评分指标")
+        combo.Editable = False
+        combo.Items.Add("VMAF")
+        combo.Items.Add("XPSNR")
+        combo.SelectedIndex = 0
+        Return combo
+    End Function
+
     Private Shared Function CreateButton(text As String,
                                          handler As EventHandler,
                                          Optional accent As Boolean = False,
@@ -1645,11 +1348,12 @@ Public NotInheritable Class MainPanel
             .SelectionRectBorderColor = Color.FromArgb(80, 71, 156, 255),
             .Font = New Font("Microsoft YaHei UI", 10.0F)
         }
-        list.Columns.Add(New UltraDetailListView.ListColumn("文件", 520))
-        list.Columns.Add(New UltraDetailListView.ListColumn("状态", 110))
+        list.Columns.Add(New UltraDetailListView.ListColumn("文件", 480))
+        list.Columns.Add(New UltraDetailListView.ListColumn("状态", 120))
         list.Columns.Add(New UltraDetailListView.ListColumn("CRF", 80))
         list.Columns.Add(New UltraDetailListView.ListColumn("分数", 130))
         list.Columns.Add(New UltraDetailListView.ListColumn("预测大小", 130))
+        list.Columns.Add(New UltraDetailListView.ListColumn("预测耗时", 130))
         Return list
     End Function
 
@@ -1687,17 +1391,17 @@ Public NotInheritable Class MainPanel
         }
     End Function
 
-    Private Enum SearchTaskState
+    Private Enum SampleTaskState
         Pending
         Running
         Paused
         Stopping
-        Enqueued
+        Completed
         Failed
         Stopped
     End Enum
 
-    Private NotInheritable Class QueueFileItem
+    Private NotInheritable Class SampleQueueFileItem
         Public Sub New(path As String, row As UltraDetailListView.ListItem)
             Me.Path = path
             Me.Row = row
@@ -1705,11 +1409,10 @@ Public NotInheritable Class MainPanel
 
         Public ReadOnly Property Path As String
         Public ReadOnly Property Row As UltraDetailListView.ListItem
-        Public Property State As SearchTaskState = SearchTaskState.Pending
+        Public Property State As SampleTaskState = SampleTaskState.Pending
         Public Property Runner As AbAv1Runner
         Public Property Cancellation As CancellationTokenSource
-        Public Property Result As SearchResult
-        Public Property OutputPath As String = String.Empty
+        Public Property Result As SampleEncodeResult
         Public Property ErrorMessage As String = String.Empty
         Public Property CommandLine As String = String.Empty
     End Class
