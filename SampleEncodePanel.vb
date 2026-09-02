@@ -33,10 +33,10 @@ Friend NotInheritable Class SampleEncodePanel
     Private ReadOnly _sampleDuration As ModernTextBox
     Private ReadOnly _vmafModel As ModernComboBox
     Private ReadOnly _fileList As UltraDetailListView
-    Private ReadOnly _presetSummary As Label
-    Private ReadOnly _environmentStatus As Label
-    Private ReadOnly _vmafModelStatus As Label
-    Private ReadOnly _status As Label
+    Private ReadOnly _presetSummary As HtmlColorLabel
+    Private ReadOnly _environmentStatus As HtmlColorLabel
+    Private ReadOnly _vmafModelStatus As HtmlColorLabel
+    Private ReadOnly _status As HtmlColorLabel
     Private ReadOnly _progressRing As ProgressRing
     Private ReadOnly _startButton As ModernButton
     Private ReadOnly _addFilesButton As ModernButton
@@ -50,7 +50,7 @@ Friend NotInheritable Class SampleEncodePanel
     Private ReadOnly _taskContextMenu As ModernContextMenu
     Private ReadOnly _progressRenderTimer As System.Windows.Forms.Timer
     Private ReadOnly _detailFont As Font
-    Private _vmafModelRow As TableLayoutPanel
+    Private _vmafModelRow As GpuGridPanel
     Private _modelRowStyle As RowStyle
 
     Private ReadOnly _items As New List(Of SampleQueueFileItem)()
@@ -67,7 +67,8 @@ Friend NotInheritable Class SampleEncodePanel
 
     Public Sub New()
         SuspendLayout()
-        DoubleBuffered = True
+        'Keep this native host control out of the LakeUI 5 child-surface paint path.
+        DoubleBuffered = False
         BackColor = Color.Transparent
         ForeColor = ColorText
         Font = New Font("Microsoft YaHei UI", 10.0F)
@@ -88,13 +89,9 @@ Friend NotInheritable Class SampleEncodePanel
         _fileList = CreateFileList()
         _fileList.AllowDrop = True
         _presetSummary = CreateLabel("尚未读取预设", ColorMuted, 9.0F)
-        _presetSummary.AutoEllipsis = True
         _environmentStatus = CreateLabel(String.Empty, ColorMuted, 9.0F)
-        _environmentStatus.AutoEllipsis = True
         _vmafModelStatus = CreateLabel("等待扫描当前 ffmpeg", ColorMuted, 8.5F)
-        _vmafModelStatus.AutoEllipsis = True
         _status = CreateLabel("就绪", ColorMuted, 9.0F)
-        _status.AutoEllipsis = True
 
         _progressRing = New ProgressRing With {
             .Size = New Size(30, 30),
@@ -165,7 +162,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Sub
 
     Private Function BuildLayout() As Control
-        Dim root As New TableLayoutPanel With {
+        Dim root As New GpuGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 4,
@@ -187,7 +184,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Function BuildPathSection() As Control
-        Dim layout As New TableLayoutPanel With {
+        Dim layout As New GpuGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 5,
             .RowCount = 3,
@@ -204,7 +201,7 @@ Friend NotInheritable Class SampleEncodePanel
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 52))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 40))
 
-        Dim topBar As New TableLayoutPanel With {
+        Dim topBar As New GpuGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 2,
             .RowCount = 1,
@@ -220,7 +217,7 @@ Friend NotInheritable Class SampleEncodePanel
             0,
             0)
         _environmentStatus.Dock = DockStyle.Fill
-        _environmentStatus.TextAlign = ContentAlignment.MiddleRight
+        _environmentStatus.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleRight
         topBar.Controls.Add(_environmentStatus, 1, 0)
         topBar.ResumeLayout(False)
         layout.Controls.Add(topBar, 0, 0)
@@ -237,10 +234,10 @@ Friend NotInheritable Class SampleEncodePanel
 
         Dim summaryCaption = CreateLabel("当前预设", ColorMuted, 9.5F)
         summaryCaption.Dock = DockStyle.Fill
-        summaryCaption.TextAlign = ContentAlignment.MiddleLeft
+        summaryCaption.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         layout.Controls.Add(summaryCaption, 0, 2)
         _presetSummary.Dock = DockStyle.Fill
-        _presetSummary.TextAlign = ContentAlignment.MiddleLeft
+        _presetSummary.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         layout.Controls.Add(_presetSummary, 2, 2)
         layout.SetColumnSpan(_presetSummary, 3)
         layout.ResumeLayout(False)
@@ -248,10 +245,8 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Function BuildSettingsSection() As Control
-        Dim layout As New TableLayoutPanel With {
+        Dim layout As New GpuGridPanel With {
             .Dock = DockStyle.Fill,
-            .AutoSize = True,
-            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
             .ColumnCount = 4,
             .RowCount = 3,
             .Padding = New Padding(0, 10, 0, 10),
@@ -275,7 +270,7 @@ Friend NotInheritable Class SampleEncodePanel
         layout.Controls.Add(CreateSettingsField("采样数量", _samples), 2, 1)
         layout.Controls.Add(CreateSettingsField("单段时长", _sampleDuration), 3, 1)
 
-        _vmafModelRow = New TableLayoutPanel With {
+        _vmafModelRow = New GpuGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 5,
             .RowCount = 1,
@@ -291,7 +286,7 @@ Friend NotInheritable Class SampleEncodePanel
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 300))
         Dim modelCaption = CreateFieldLabel("VMAF 模型")
         modelCaption.AutoSize = False
-        modelCaption.TextAlign = ContentAlignment.MiddleLeft
+        modelCaption.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         _vmafModelRow.Controls.Add(modelCaption, 0, 0)
         _vmafModel.Margin = New Padding(0, 5, 12, 5)
         _vmafModelRow.Controls.Add(_vmafModel, 1, 0)
@@ -302,7 +297,7 @@ Friend NotInheritable Class SampleEncodePanel
         _vmafModelRow.Controls.Add(_refreshModelsButton, 2, 0)
         _vmafModelRow.Controls.Add(_browseModelButton, 3, 0)
         _vmafModelStatus.Dock = DockStyle.Fill
-        _vmafModelStatus.TextAlign = ContentAlignment.MiddleLeft
+        _vmafModelStatus.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         _vmafModelRow.Controls.Add(_vmafModelStatus, 4, 0)
         _vmafModelRow.ResumeLayout(False)
         layout.Controls.Add(_vmafModelRow, 0, 2)
@@ -312,7 +307,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Function BuildFileSection() As Control
-        Dim layout As New TableLayoutPanel With {
+        Dim layout As New GpuGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 3,
@@ -328,9 +323,9 @@ Friend NotInheritable Class SampleEncodePanel
             0,
             0)
 
-        Dim toolbar As New FlowLayoutPanel With {
+        Dim toolbar As New GpuFlowPanel With {
             .Dock = DockStyle.Fill,
-            .FlowDirection = FlowDirection.LeftToRight,
+            .FlowDirection = ModernPanel.FlowDirectionEnum.LeftToRight,
             .WrapContents = False,
             .BackColor = Color.Transparent,
             .Margin = Padding.Empty
@@ -353,7 +348,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Function BuildFooter() As Control
-        Dim layout As New TableLayoutPanel With {
+        Dim layout As New GpuGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 3,
             .RowCount = 1,
@@ -365,7 +360,7 @@ Friend NotInheritable Class SampleEncodePanel
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 250))
         _status.Dock = DockStyle.Fill
-        _status.TextAlign = ContentAlignment.MiddleLeft
+        _status.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         _startButton.Dock = DockStyle.Fill
         layout.Controls.Add(_progressRing, 0, 0)
         layout.Controls.Add(_status, 1, 0)
@@ -375,7 +370,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Shared Function CreateSettingsField(caption As String, editor As Control) As Control
-        Dim layout As New TableLayoutPanel With {
+        Dim layout As New GpuGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 2,
@@ -388,7 +383,7 @@ Friend NotInheritable Class SampleEncodePanel
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 28))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 50))
         Dim label = CreateFieldLabel(caption)
-        label.TextAlign = ContentAlignment.BottomLeft
+        label.TextAlign = HtmlColorLabel.TextAlignEnum.BottomLeft
         layout.Controls.Add(label, 0, 0)
         layout.Controls.Add(editor, 0, 1)
         layout.ResumeLayout(False)
@@ -479,7 +474,15 @@ Friend NotInheritable Class SampleEncodePanel
         _vmafModel.Enabled = showModel AndAlso Not _running
         _refreshModelsButton.Enabled = showModel AndAlso Not _running AndAlso Not _scanningModels
         _browseModelButton.Enabled = showModel AndAlso Not _running
-        _vmafModelRow.Parent?.PerformLayout()
+        PerformLayoutThroughAncestors(_vmafModelRow)
+    End Sub
+
+    Private Shared Sub PerformLayoutThroughAncestors(start As Control)
+        Dim current = start
+        While current IsNot Nothing
+            current.PerformLayout()
+            current = current.Parent
+        End While
     End Sub
 
     Private Async Sub RefreshModels(sender As Object, e As EventArgs)
@@ -1369,10 +1372,10 @@ Friend NotInheritable Class SampleEncodePanel
         }
     End Function
 
-    Private Shared Function CreateFieldLabel(text As String) As Label
+    Private Shared Function CreateFieldLabel(text As String) As HtmlColorLabel
         Dim label = CreateLabel(text, ColorMuted, 9.0F)
         label.Dock = DockStyle.Fill
-        label.TextAlign = ContentAlignment.MiddleLeft
+        label.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         label.Margin = New Padding(2, 0, 2, 0)
         Return label
     End Function
@@ -1380,13 +1383,15 @@ Friend NotInheritable Class SampleEncodePanel
     Private Shared Function CreateLabel(text As String,
                                         color As Color,
                                         size As Single,
-                                        Optional style As FontStyle = FontStyle.Regular) As Label
-        Return New Label With {
+                                        Optional style As FontStyle = FontStyle.Regular) As HtmlColorLabel
+        Return New HtmlColorLabel With {
             .Text = text,
             .ForeColor = color,
             .BackColor = Color.Transparent,
+            .BackColor1 = Color.Transparent,
+            .BorderSize = 0,
             .Font = New Font("Microsoft YaHei UI", size, style),
-            .UseMnemonic = False
+            .TextAlign = HtmlColorLabel.TextAlignEnum.TopLeft
         }
     End Function
 

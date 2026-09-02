@@ -1,5 +1,8 @@
 # FFmpegFreeUI AB-AV1 插件
 
+> [!Note]
+> 插件的v2.x版本开始面向最新版 3FUI（内置 LakeUI 5.5）适配，不再保证旧版 3FUI/LakeUI 的显示兼容性。
+
 本插件会读取 FFmpegFreeUI v6 预设，并提供两个工作页：
 
 - **CRF 搜索**：把影响画面质量的编码参数交给 `ab-av1 crf-search`，按目标 VMAF 或 XPSNR 搜索 CRF；成功后仅替换预设中的 CRF，再把正式编码任务加入 3FUI 原生编码队列。

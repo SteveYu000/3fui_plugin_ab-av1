@@ -16,7 +16,7 @@
     <DebugType>embedded</DebugType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <Version>1.1.1</Version>
+    <Version>2.0.0</Version>
     <Authors>Github @SteveYu000</Authors>
     <Description>通过 FFmpegFreeUI 官方插件 API 集成 ab-av1 VMAF/XPSNR CRF 搜索与样本编码任务队列。</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -27,8 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 按官方 3FUI 当前内置版本以下的 API 基线编译；.NET 会用宿主已加载的较新 LakeUI 满足该引用。 -->
-    <PackageReference Include="LakeUI" Version="3.16.0" />
+    <!-- 使用公开 NuGet API 作为编译契约；运行时由最新版 3FUI 已加载的 LakeUI 5.5 提供实现。 -->
+    <PackageReference Include="LakeUI" Version="5.5.0" />
   </ItemGroup>
 
   <Target Name="CreatePluginArtifact" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
