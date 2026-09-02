@@ -1219,7 +1219,6 @@ Friend NotInheritable Class SampleEncodePanel
             .MenuFont = New Font("Microsoft YaHei UI", 10.0F),
             .MenuForeColor = ColorText,
             .MenuPadding = New Padding(10),
-            .PopupAnimationDuration = 120,
             .SeparatorColor = Color.FromArgb(80, 220, 220, 220),
             .SeparatorHeight = 14
         }
