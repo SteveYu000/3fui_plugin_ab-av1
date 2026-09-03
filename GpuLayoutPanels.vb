@@ -4,6 +4,28 @@ Imports System.ComponentModel
 Imports System.Windows.Forms
 Imports LakeUI
 
+Friend Module GpuBackgroundBinding
+    ''' <summary>
+    ''' Makes controls with LakeUI's public BackgroundSource property sample a
+    ''' stable outer GPU surface directly. Automatic nearest-ancestor sampling
+    ''' deliberately does not register dependency invalidations in LakeUI 5.5;
+    ''' an explicit source does, so a temporarily unavailable backdrop cannot
+    ''' leave a child swap chain presenting its cleared black frame indefinitely.
+    ''' </summary>
+    Public Sub BindImmediateChildren(container As Control, source As Control)
+        If container Is Nothing OrElse source Is Nothing Then Return
+
+        For Each child As Control In container.Controls
+            If child Is Nothing OrElse child.IsDisposed OrElse ReferenceEquals(child, source) Then Continue For
+            Dim backgroundSourceProperty = child.GetType().GetProperty("BackgroundSource")
+            If backgroundSourceProperty Is Nothing OrElse
+               Not backgroundSourceProperty.CanWrite OrElse
+               Not GetType(Control).IsAssignableFrom(backgroundSourceProperty.PropertyType) Then Continue For
+            backgroundSourceProperty.SetValue(child, source)
+        Next
+    End Sub
+End Module
+
 ''' <summary>
 ''' A small grid layout container backed by a LakeUI GPU surface.
 '''
@@ -39,11 +61,13 @@ Friend NotInheritable Class GpuGridPanel
     End Class
 
     Private ReadOnly _cells As New Dictionary(Of Control, GridCell)()
+    Private ReadOnly _dockStyles As New Dictionary(Of Control, DockStyle)()
     Private ReadOnly _columnStyles As New List(Of ColumnStyle)()
     Private ReadOnly _rowStyles As New List(Of RowStyle)()
     Private _columnCount As Integer = 1
     Private _rowCount As Integer = 1
     Private _layingOut As Boolean
+    Private _preserveChildBoundsWhenCollapsed As Boolean
 
     Public Sub New()
         BackColor = Color.Transparent
@@ -99,8 +123,34 @@ Friend NotInheritable Class GpuGridPanel
         End Get
     End Property
 
+    ''' <summary>
+    ''' Keeps child HWND/GPU surfaces at their last valid size while this grid is
+    ''' collapsed to zero width or height. This is useful for optional rows:
+    ''' LakeUI 5.5 releases a presenter's resources on Visible=False, and resizing
+    ''' every child to zero forces all swap chains to be rebuilt on expansion.
+    ''' The zero-sized parent still clips the retained children completely.
+    ''' </summary>
+    <Browsable(False), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property PreserveChildBoundsWhenCollapsed As Boolean
+        Get
+            Return _preserveChildBoundsWhenCollapsed
+        End Get
+        Set(value As Boolean)
+            _preserveChildBoundsWhenCollapsed = value
+        End Set
+    End Property
+
     Public Sub AddControl(control As Control, column As Integer, row As Integer)
         If control Is Nothing Then Throw New ArgumentNullException(NameOf(control))
+        'The native WinForms layout engine runs before this grid's OnLayout. If a
+        'child keeps Dock=Fill, WinForms first expands it to the whole container
+        'and this grid immediately moves it back into its cell. On LakeUI 5.5
+        'each of those two bounds changes recreates/invalidates a GPU surface and
+        'queues another layout, causing thousands of frames during a tab switch.
+        'Retain the requested docking semantics here and keep the actual child
+        'undocked so only this grid is allowed to assign its bounds.
+        If Not _dockStyles.ContainsKey(control) Then _dockStyles(control) = control.Dock
+        control.Dock = DockStyle.None
         _cells(control) = New GridCell With {
             .Column = Math.Max(0, column),
             .Row = Math.Max(0, row)
@@ -124,13 +174,17 @@ Friend NotInheritable Class GpuGridPanel
 
     Protected Overrides Sub OnControlRemoved(e As ControlEventArgs)
         If _cells IsNot Nothing AndAlso e.Control IsNot Nothing Then _cells.Remove(e.Control)
+        'Keep the requested docking style while a control is temporarily
+        'detached. The compact search layout clears and re-adds the same field
+        'controls; their actual Dock is intentionally None at that point.
         MyBase.OnControlRemoved(e)
     End Sub
 
     Protected Overrides Sub OnLayout(levent As LayoutEventArgs)
         'LakeUI may perform layout from its base constructor, before this
         'derived type's field initializers have run.
-        If _cells Is Nothing OrElse _columnStyles Is Nothing OrElse _rowStyles Is Nothing Then
+        If _cells Is Nothing OrElse _dockStyles Is Nothing OrElse
+           _columnStyles Is Nothing OrElse _rowStyles Is Nothing Then
             MyBase.OnLayout(levent)
             Return
         End If
@@ -146,6 +200,11 @@ Friend NotInheritable Class GpuGridPanel
                 Padding.Top,
                 Math.Max(0, ClientSize.Width - Padding.Horizontal),
                 Math.Max(0, ClientSize.Height - Padding.Vertical))
+            'Do not resize retained child HWNDs to 0x0. The parent clips them while
+            'collapsed, and their already-presented transparent surfaces can be
+            'shown immediately when the row is expanded again.
+            If _preserveChildBoundsWhenCollapsed AndAlso
+               (content.Width <= 0 OrElse content.Height <= 0) Then Return
             Dim columnWidths = CalculateTracks(vertical:=False, _columnCount, _columnStyles, content.Width)
             Dim rowHeights = CalculateTracks(vertical:=True, _rowCount, _rowStyles, content.Height)
             Dim columnOffsets = BuildOffsets(content.Left, columnWidths)
@@ -163,7 +222,9 @@ Friend NotInheritable Class GpuGridPanel
                     rowOffsets(row),
                     SumTracks(columnWidths, column, columnSpan),
                     SumTracks(rowHeights, row, rowSpan))
-                ApplyCellBounds(control, bounds)
+                Dim requestedDock = DockStyle.None
+                If Not _dockStyles.TryGetValue(control, requestedDock) Then requestedDock = control.Dock
+                ApplyCellBounds(control, bounds, requestedDock)
             Next
         Finally
             _layingOut = False
@@ -341,7 +402,9 @@ Friend NotInheritable Class GpuGridPanel
         Return total
     End Function
 
-    Private Shared Sub ApplyCellBounds(control As Control, cellBounds As Rectangle)
+    Private Shared Sub ApplyCellBounds(control As Control,
+                                       cellBounds As Rectangle,
+                                       requestedDock As DockStyle)
         Dim margin = control.Margin
         Dim available = New Rectangle(
             cellBounds.Left + margin.Left,
@@ -350,7 +413,7 @@ Friend NotInheritable Class GpuGridPanel
             Math.Max(0, cellBounds.Height - margin.Vertical))
 
         Dim bounds As Rectangle
-        Select Case control.Dock
+        Select Case requestedDock
             Case DockStyle.Fill
                 bounds = available
             Case DockStyle.Top
@@ -371,6 +434,33 @@ Friend NotInheritable Class GpuGridPanel
                 bounds = New Rectangle(available.Left, available.Top, Math.Max(0, width), Math.Max(0, height))
         End Select
         If control.Bounds <> bounds Then control.Bounds = bounds
+    End Sub
+End Class
+
+''' <summary>
+''' Prevents LakeUI 5.5's non-editable combo box from retaining a caret scroll
+''' offset calculated at a narrow intermediate construction size. The base
+''' control resets that offset on resize only for non-left text alignment, so
+''' briefly use centered alignment while it recalculates and restore the visual
+''' left alignment before the queued GPU paint runs.
+''' </summary>
+Friend NotInheritable Class StableModernComboBox
+    Inherits ModernComboBox
+
+    Protected Overrides Sub OnSizeChanged(e As EventArgs)
+        If Not Editable AndAlso
+           TextAlign = ModernComboBox.TextAlignMode.Left AndAlso
+           Not String.IsNullOrEmpty(Text) Then
+            TextAlign = ModernComboBox.TextAlignMode.Center
+            Try
+                MyBase.OnSizeChanged(e)
+            Finally
+                TextAlign = ModernComboBox.TextAlignMode.Left
+            End Try
+            Return
+        End If
+
+        MyBase.OnSizeChanged(e)
     End Sub
 End Class
 

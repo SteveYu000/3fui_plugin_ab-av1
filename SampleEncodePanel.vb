@@ -155,6 +155,10 @@ Friend NotInheritable Class SampleEncodePanel
         MyBase.Dispose(disposing)
     End Sub
 
+    Friend Sub BindVmafModelBackgroundSource(source As Control)
+        GpuBackgroundBinding.BindImmediateChildren(_vmafModelRow, source)
+    End Sub
+
     Private Async Sub SampleEncodePanelLoad(sender As Object, e As EventArgs)
         If _initialModelScanStarted Then Return
         _initialModelScanStarted = True
@@ -276,7 +280,8 @@ Friend NotInheritable Class SampleEncodePanel
             .RowCount = 1,
             .Margin = Padding.Empty,
             .Padding = New Padding(0, 10, 0, 4),
-            .BackColor = Color.Transparent
+            .BackColor = Color.Transparent,
+            .PreserveChildBoundsWhenCollapsed = True
         }
         _vmafModelRow.SuspendLayout()
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 150))
@@ -470,7 +475,6 @@ Friend NotInheritable Class SampleEncodePanel
         If _vmafModelRow Is Nothing OrElse _modelRowStyle Is Nothing Then Return
         Dim showModel = GetSelectedMetric() = QualityMetric.Vmaf
         _modelRowStyle.Height = If(showModel, 74.0F, 0.0F)
-        _vmafModelRow.Visible = showModel
         _vmafModel.Enabled = showModel AndAlso Not _running
         _refreshModelsButton.Enabled = showModel AndAlso Not _running AndAlso Not _scanningModels
         _browseModelButton.Enabled = showModel AndAlso Not _running
@@ -1247,7 +1251,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Shared Function CreateComboBox(waterText As String) As ModernComboBox
-        Return New ModernComboBox With {
+        Return New StableModernComboBox With {
             .Dock = DockStyle.Fill,
             .Margin = New Padding(0, 5, 0, 5),
             .Padding = New Padding(10, 0, 10, 0),

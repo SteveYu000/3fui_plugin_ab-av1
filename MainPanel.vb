@@ -172,6 +172,13 @@ Public NotInheritable Class MainPanel
         ModernPanel1.Controls.Add(_tabControl)
         Controls.Add(ModernPanel1)
 
+        'The optional model row crosses several transparent GPU layout surfaces.
+        'Bind its child controls directly to the stable root surface so LakeUI
+        'registers an explicit dependency and immediately replaces any failed
+        'background sample instead of leaving a cleared (black) swap-chain frame.
+        GpuBackgroundBinding.BindImmediateChildren(_vmafModelRow, ModernPanel1)
+        _sampleEncodePanel.BindVmafModelBackgroundSource(ModernPanel1)
+
         AddHandler _presetPath.LostFocus, AddressOf PresetPathLostFocus
         AddHandler _scoreMetric.SelectedIndexChanged, AddressOf ScoreMetricChanged
         AddHandler _fileList.SelectedIndexChanged, AddressOf QueueSelectionChanged
@@ -357,7 +364,8 @@ Public NotInheritable Class MainPanel
             .RowCount = 1,
             .Margin = Padding.Empty,
             .Padding = New Padding(0, 10, 0, 4),
-            .BackColor = Color.Transparent
+            .BackColor = Color.Transparent,
+            .PreserveChildBoundsWhenCollapsed = True
         }
         _vmafModelRow.SuspendLayout()
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 150))
@@ -526,6 +534,10 @@ Public NotInheritable Class MainPanel
         sampleEncodePage.Dock = DockStyle.Fill
         sampleEncodePage.Margin = Padding.Empty
 
+        'LakeUI 5.5 must rebuild the visible page's background-consumer tree
+        'in outer-to-inner order. Suppressing that refresh leaves independent
+        'child surfaces from the previous tab visible until incidental paints
+        'eventually replace them, which presents as several seconds of flashing.
         Dim tabs As New ModernTabControl With {
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
@@ -557,7 +569,7 @@ Public NotInheritable Class MainPanel
             .IndicatorBorderRadius = 2,
             .AnimationDuration = 120,
             .AnimationFPS = 60,
-            .SuppressBoundPageRefreshOnSwitch = True
+            .SuppressBoundPageRefreshOnSwitch = False
         }
         tabs.Items.Add(New ModernTabControl.ModernTab("CRF 搜索") With {
             .BoundControl = crfSearchPage
@@ -605,7 +617,10 @@ Public NotInheritable Class MainPanel
         End If
 
         Dim showModel = metric = QualityMetric.Vmaf
-        _vmafModelRow.Visible = showModel
+        'Never toggle Visible for this row. In LakeUI 5.5, hiding the parent also
+        'releases every child's transparent GPU surface; rebuilding all of them at
+        'once is what leaves the label/button areas black until delayed retries run.
+        'A zero-height, clipping parent hides the row without destroying resources.
         _vmafModel.Enabled = showModel AndAlso Not _running
         _refreshModelsButton.Enabled = showModel AndAlso Not _running AndAlso Not _scanningModels
         _browseModelButton.Enabled = showModel AndAlso Not _running
@@ -1556,7 +1571,7 @@ Public NotInheritable Class MainPanel
     End Function
 
     Private Shared Function CreateComboBox(waterText As String) As ModernComboBox
-        Return New ModernComboBox With {
+        Return New StableModernComboBox With {
             .Dock = DockStyle.Fill,
             .Margin = New Padding(0, 5, 0, 5),
             .Padding = New Padding(10, 0, 10, 0),

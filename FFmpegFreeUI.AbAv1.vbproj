@@ -16,7 +16,7 @@
     <DebugType>embedded</DebugType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <Version>2.0.0</Version>
+    <Version>2.0.1</Version>
     <Authors>Github @SteveYu000</Authors>
     <Description>通过 FFmpegFreeUI 官方插件 API 集成 ab-av1 VMAF/XPSNR CRF 搜索与样本编码任务队列。</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
