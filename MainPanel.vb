@@ -177,7 +177,8 @@ Public NotInheritable Class MainPanel
         'registers an explicit dependency and immediately replaces any failed
         'background sample instead of leaving a cleared (black) swap-chain frame.
         GpuBackgroundBinding.BindImmediateChildren(_vmafModelRow, ModernPanel1)
-        _sampleEncodePanel.BindVmafModelBackgroundSource(ModernPanel1)
+        _fileList.BackgroundSource = ModernPanel1
+        _sampleEncodePanel.BindPageBackgroundSource(ModernPanel1)
 
         AddHandler _presetPath.LostFocus, AddressOf PresetPathLostFocus
         AddHandler _scoreMetric.SelectedIndexChanged, AddressOf ScoreMetricChanged
@@ -1633,19 +1634,21 @@ Public NotInheritable Class MainPanel
     End Function
 
     Private Shared Function CreateFileList() As UltraDetailListView
+        'Draw the rounded task card on the list's own GPU surface, including
+        'the empty area. A transparent header avoids a second rectangular fill.
         Dim list As New UltraDetailListView With {
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
-            .BackgroundColor = Color.Transparent,
+            .BackgroundColor = ColorControl,
             .BorderColor = Color.Transparent,
             .BorderSize = 0,
-            .BorderRadius = 0,
+            .BorderRadius = 10,
             .HeaderVisible = True,
             .HeaderHeight = 40,
-            .HeaderBackColor = ColorControl,
+            .HeaderBackColor = Color.Transparent,
             .HeaderForeColor = ColorText,
-            .HeaderBorderColor = Color.Transparent,
-            .HeaderBorderWidth = 0,
+            .HeaderBorderColor = Color.FromArgb(32, 255, 255, 255),
+            .HeaderBorderWidth = 1,
             .ContentPadding = New Padding(0, 8, 0, 8),
             .ItemPadding = New Padding(14, 11, 14, 11),
             .ItemSpacing = 6,

@@ -155,8 +155,9 @@ Friend NotInheritable Class SampleEncodePanel
         MyBase.Dispose(disposing)
     End Sub
 
-    Friend Sub BindVmafModelBackgroundSource(source As Control)
+    Friend Sub BindPageBackgroundSource(source As Control)
         GpuBackgroundBinding.BindImmediateChildren(_vmafModelRow, source)
+        _fileList.BackgroundSource = source
     End Sub
 
     Private Async Sub SampleEncodePanelLoad(sender As Object, e As EventArgs)
@@ -1321,19 +1322,20 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Shared Function CreateFileList() As UltraDetailListView
+        'Keep the translucent rounded card and its header in one GPU surface.
         Dim list As New UltraDetailListView With {
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
-            .BackgroundColor = Color.Transparent,
+            .BackgroundColor = ColorControl,
             .BorderColor = Color.Transparent,
             .BorderSize = 0,
-            .BorderRadius = 0,
+            .BorderRadius = 10,
             .HeaderVisible = True,
             .HeaderHeight = 40,
-            .HeaderBackColor = ColorControl,
+            .HeaderBackColor = Color.Transparent,
             .HeaderForeColor = ColorText,
-            .HeaderBorderColor = Color.Transparent,
-            .HeaderBorderWidth = 0,
+            .HeaderBorderColor = Color.FromArgb(32, 255, 255, 255),
+            .HeaderBorderWidth = 1,
             .ContentPadding = New Padding(0, 8, 0, 8),
             .ItemPadding = New Padding(14, 11, 14, 11),
             .ItemSpacing = 6,

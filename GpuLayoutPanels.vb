@@ -447,6 +447,19 @@ End Class
 Friend NotInheritable Class StableModernComboBox
     Inherits ModernComboBox
 
+    Public Sub New()
+        'Match 3FUI's native dropdowns through LakeUI's public popup API.
+        'Auto samples the host backdrop; Overlay keeps the list in its GPU tree.
+        DropDownMode = DropDownDisplayMode.Overlay
+        DropDownBackdropMode = PopupBackdropMode.Auto
+        DropDownBackdropBlurRadius = 30
+        DropDownBackdropBlurPasses = 2
+        DropDownPadding = New Padding(10)
+        DropDownHoverColor = Color.FromArgb(20, 220, 220, 220)
+        DropDownSelectedColor = Color.FromArgb(40, 220, 220, 220)
+        DropDownSelectedForeColor = Color.White
+    End Sub
+
     Protected Overrides Sub OnSizeChanged(e As EventArgs)
         If Not Editable AndAlso
            TextAlign = ModernComboBox.TextAlignMode.Left AndAlso
