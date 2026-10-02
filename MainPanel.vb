@@ -539,7 +539,7 @@ Public NotInheritable Class MainPanel
         'in outer-to-inner order. Suppressing that refresh leaves independent
         'child surfaces from the previous tab visible until incidental paints
         'eventually replace them, which presents as several seconds of flashing.
-        Dim tabs As New ModernTabControl With {
+        Dim tabs As New CapsulePageTabs With {
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
             .Padding = Padding.Empty,
@@ -552,22 +552,21 @@ Public NotInheritable Class MainPanel
             .SeparatorColor = Color.Transparent,
             .SeparatorWidth = 0,
             .TabStripHeight = 46,
-            .TabStripPadding = New Padding(0, 0, 0, 4),
+            .TabStripPadding = New Padding(2, 2, 2, 10),
             .TabSizingMode = ModernTabControl.TabSizingEnum.AutoWidth,
-            .TabAlignment = ModernTabControl.TabAlignmentEnum.Left,
+            .TabAlignment = ModernTabControl.TabAlignmentEnum.Center,
             .TabPosition = ModernTabControl.TabPositionEnum.Top,
-            .TabItemMinWidth = 112,
-            .TabItemSpacing = 4,
-            .TabItemTextPadding = 16,
-            .TabItemBorderRadius = 8,
-            .TabItemForeColor = ColorMuted,
-            .TabItemSelectedForeColor = ColorText,
-            .TabItemHoverBackColor = ColorControl,
-            .TabItemSelectedBackColor = ColorControl,
-            .IndicatorColor = ColorAccent,
-            .IndicatorHeight = 3,
-            .IndicatorPadding = 10,
-            .IndicatorBorderRadius = 2,
+            .TabItemMinWidth = 106,
+            .TabItemSpacing = 0,
+            .TabItemTextPadding = 14,
+            .TabItemBorderRadius = 17,
+            .TabItemForeColor = Color.FromArgb(185, 220, 220, 220),
+            .TabItemSelectedForeColor = Color.FromArgb(245, 245, 245),
+            .TabItemHoverBackColor = Color.FromArgb(18, 255, 255, 255),
+            .TabItemSelectedBackColor = Color.FromArgb(232, 66, 68, 73),
+            .IndicatorColor = Color.Transparent,
+            .IndicatorHeight = 0,
+            .FocusBorderColor = Color.FromArgb(90, 255, 255, 255),
             .AnimationDuration = 120,
             .AnimationFPS = 60,
             .SuppressBoundPageRefreshOnSwitch = False
@@ -579,6 +578,8 @@ Public NotInheritable Class MainPanel
             .BoundControl = sampleEncodePage
         })
         tabs.SelectedIndex = 0
+        AddHandler tabs.SelectedIndexChanged, Sub(sender, e) tabs.UpdateCapsuleBackground()
+        tabs.UpdateCapsuleBackground()
         Return tabs
     End Function
 
