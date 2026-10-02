@@ -4,7 +4,7 @@
     <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <OutputType>Library</OutputType>
     <UseWindowsForms>true</UseWindowsForms>
-    <!-- 官方加载器按“程序集名称 + .Entry”定位入口；文件仅在发布时改为 .3fui.dll。 -->
+    <!-- 官方加载器按“程序集名称 + .Entry”定位入口；保留程序集名称，插件输出文件名使用 .3fui.dll。 -->
     <AssemblyName>FFmpegFreeUI.AbAv1</AssemblyName>
     <RootNamespace>FFmpegFreeUI.AbAv1</RootNamespace>
     <OptionExplicit>On</OptionExplicit>
@@ -34,6 +34,16 @@
   <Target Name="CreatePluginArtifact" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <MakeDir Directories="$(MSBuildProjectDirectory)\dist" />
     <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(MSBuildProjectDirectory)\dist\$(AssemblyName).3fui.dll" />
+  </Target>
+
+  <!-- 修改发布清单中的目标文件名，由 SDK 直接输出插件 DLL，兼容自定义发布目录和跳过构建的发布。 -->
+  <Target Name="SetPluginPublishFileName" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Update="@(ResolvedFileToPublish)"
+                             Condition="'%(ResolvedFileToPublish.RelativePath)' == '$(TargetFileName)'">
+        <RelativePath>$(AssemblyName).3fui.dll</RelativePath>
+      </ResolvedFileToPublish>
+    </ItemGroup>
   </Target>
 
 </Project>
