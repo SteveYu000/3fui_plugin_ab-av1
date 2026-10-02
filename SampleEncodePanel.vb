@@ -50,7 +50,7 @@ Friend NotInheritable Class SampleEncodePanel
     Private ReadOnly _taskContextMenu As ModernContextMenu
     Private ReadOnly _progressRenderTimer As System.Windows.Forms.Timer
     Private ReadOnly _detailFont As Font
-    Private _vmafModelRow As GpuGridPanel
+    Private _vmafModelRow As LayoutGridPanel
     Private _modelRowStyle As RowStyle
 
     Private ReadOnly _items As New List(Of SampleQueueFileItem)()
@@ -156,7 +156,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Sub
 
     Friend Sub BindPageBackgroundSource(source As Control)
-        GpuBackgroundBinding.BindImmediateChildren(_vmafModelRow, source)
+        LayoutBackgroundBinding.BindImmediateChildren(_vmafModelRow, source)
         _fileList.BackgroundSource = source
     End Sub
 
@@ -167,7 +167,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Sub
 
     Private Function BuildLayout() As Control
-        Dim root As New GpuGridPanel With {
+        Dim root As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 4,
@@ -189,7 +189,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Function BuildPathSection() As Control
-        Dim layout As New GpuGridPanel With {
+        Dim layout As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 5,
             .RowCount = 3,
@@ -206,7 +206,7 @@ Friend NotInheritable Class SampleEncodePanel
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 52))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 40))
 
-        Dim topBar As New GpuGridPanel With {
+        Dim topBar As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 2,
             .RowCount = 1,
@@ -250,7 +250,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Function BuildSettingsSection() As Control
-        Dim layout As New GpuGridPanel With {
+        Dim layout As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 4,
             .RowCount = 3,
@@ -275,7 +275,7 @@ Friend NotInheritable Class SampleEncodePanel
         layout.Controls.Add(CreateSettingsField("采样数量", _samples), 2, 1)
         layout.Controls.Add(CreateSettingsField("单段时长", _sampleDuration), 3, 1)
 
-        _vmafModelRow = New GpuGridPanel With {
+        _vmafModelRow = New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 5,
             .RowCount = 1,
@@ -314,7 +314,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Function BuildFileSection() As Control
-        Dim layout As New GpuGridPanel With {
+        Dim layout As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 3,
@@ -330,7 +330,7 @@ Friend NotInheritable Class SampleEncodePanel
             0,
             0)
 
-        Dim toolbar As New GpuFlowPanel With {
+        Dim toolbar As New LayoutFlowPanel With {
             .Dock = DockStyle.Fill,
             .FlowDirection = ModernPanel.FlowDirectionEnum.LeftToRight,
             .WrapContents = False,
@@ -355,7 +355,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Function BuildFooter() As Control
-        Dim layout As New GpuGridPanel With {
+        Dim layout As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 3,
             .RowCount = 1,
@@ -377,7 +377,7 @@ Friend NotInheritable Class SampleEncodePanel
     End Function
 
     Private Shared Function CreateSettingsField(caption As String, editor As Control) As Control
-        Dim layout As New GpuGridPanel With {
+        Dim layout As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 2,

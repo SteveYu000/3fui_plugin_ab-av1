@@ -4,13 +4,11 @@ Imports System.ComponentModel
 Imports System.Windows.Forms
 Imports LakeUI
 
-Friend Module GpuBackgroundBinding
+Friend Module LayoutBackgroundBinding
     ''' <summary>
-    ''' Makes controls with LakeUI's public BackgroundSource property sample a
-    ''' stable outer GPU surface directly. Automatic nearest-ancestor sampling
-    ''' deliberately does not register dependency invalidations in LakeUI 5.5;
-    ''' an explicit source does, so a temporarily unavailable backdrop cannot
-    ''' leave a child swap chain presenting its cleared black frame indefinitely.
+    ''' 通过 LakeUI 的公开 BackgroundSource 属性，将控件绑定到稳定的外层底板。
+    ''' LakeUI 5.5 自动寻找最近祖先作为背景时，不会注册背景失效依赖；
+    ''' 显式绑定可让控件随背景变化及时重绘，避免背景暂时不可用后长期残留黑块。
     ''' </summary>
     Public Sub BindImmediateChildren(container As Control, source As Control)
         If container Is Nothing OrElse source Is Nothing Then Return
@@ -27,23 +25,22 @@ Friend Module GpuBackgroundBinding
 End Module
 
 ''' <summary>
-''' A small grid layout container backed by a LakeUI GPU surface.
+''' 基于 LakeUI 控件的轻量网格布局容器，绘制仍由 LakeUI 负责。
 '''
-''' LakeUI 5 renders every LakeUI control through its own presentation surface.
-''' A transparent WinForms TableLayoutPanel between those surfaces asks GDI to
-''' repaint a DirectX parent and can therefore display stale/foreign pixels.
-''' Keeping layout containers inside the LakeUI control tree avoids that mixed
-''' GDI/DirectX background path while retaining the responsive grid layout.
+''' LakeUI 5 为各控件维护独立的绘制表面。若在控件之间插入透明的
+''' WinForms TableLayoutPanel，会通过 GDI 请求重绘 DirectX 父控件，
+''' 可能显示过期或来自其他控件的画面。使用 LakeUI 控件承载布局，
+''' 可以保持行列布局能力，同时避免混用两种背景绘制路径。
 ''' </summary>
-Friend NotInheritable Class GpuGridPanel
+Friend NotInheritable Class LayoutGridPanel
     Inherits JustEmptyControl
 
     Friend NotInheritable Class GridControlCollection
         Inherits Control.ControlCollection
 
-        Private ReadOnly _owner As GpuGridPanel
+        Private ReadOnly _owner As LayoutGridPanel
 
-        Public Sub New(owner As GpuGridPanel)
+        Public Sub New(owner As LayoutGridPanel)
             MyBase.New(owner)
             _owner = owner
         End Sub
@@ -124,11 +121,10 @@ Friend NotInheritable Class GpuGridPanel
     End Property
 
     ''' <summary>
-    ''' Keeps child HWND/GPU surfaces at their last valid size while this grid is
-    ''' collapsed to zero width or height. This is useful for optional rows:
-    ''' LakeUI 5.5 releases a presenter's resources on Visible=False, and resizing
-    ''' every child to zero forces all swap chains to be rebuilt on expansion.
-    ''' The zero-sized parent still clips the retained children completely.
+    ''' 网格宽度或高度折叠为零时，保留子控件窗口和绘制表面的最后有效尺寸。
+    ''' 此设置用于可隐藏的参数行：LakeUI 5.5 在 Visible=False 时释放绘制资源，
+    ''' 将子控件尺寸设为零也会导致再次展开时重建交换链。
+    ''' 折叠后的父容器仍会完整裁剪子控件，使其不显示。
     ''' </summary>
     <Browsable(False), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
     Public Property PreserveChildBoundsWhenCollapsed As Boolean
@@ -142,13 +138,11 @@ Friend NotInheritable Class GpuGridPanel
 
     Public Sub AddControl(control As Control, column As Integer, row As Integer)
         If control Is Nothing Then Throw New ArgumentNullException(NameOf(control))
-        'The native WinForms layout engine runs before this grid's OnLayout. If a
-        'child keeps Dock=Fill, WinForms first expands it to the whole container
-        'and this grid immediately moves it back into its cell. On LakeUI 5.5
-        'each of those two bounds changes recreates/invalidates a GPU surface and
-        'queues another layout, causing thousands of frames during a tab switch.
-        'Retain the requested docking semantics here and keep the actual child
-        'undocked so only this grid is allowed to assign its bounds.
+        'WinForms 原生布局先于本容器的 OnLayout 执行。若子控件保持 Dock=Fill，
+        '原生布局会先将其铺满整个容器，本容器又立即将其调整回单元格。
+        'LakeUI 5.5 会随这些尺寸变化重建或使绘制表面失效，并再次触发布局，
+        '造成页面切换时持续重绘和闪烁。因此记录原来的停靠方式，
+        '将实际 Dock 设为 None，只由本容器计算和设置子控件的位置与尺寸。
         If Not _dockStyles.ContainsKey(control) Then _dockStyles(control) = control.Dock
         control.Dock = DockStyle.None
         _cells(control) = New GridCell With {
@@ -174,22 +168,19 @@ Friend NotInheritable Class GpuGridPanel
 
     Protected Overrides Sub OnControlRemoved(e As ControlEventArgs)
         If _cells IsNot Nothing AndAlso e.Control IsNot Nothing Then _cells.Remove(e.Control)
-        'Keep the requested docking style while a control is temporarily
-        'detached. The compact search layout clears and re-adds the same field
-        'controls; their actual Dock is intentionally None at that point.
+        '控件暂时移出容器时，保留记录的停靠方式。紧凑布局会清空并重新添加
+        '同一批参数控件，此时其实际 Dock 已设为 None，不能用它覆盖原有记录。
         MyBase.OnControlRemoved(e)
     End Sub
 
     Protected Overrides Sub OnLayout(levent As LayoutEventArgs)
-        'LakeUI may perform layout from its base constructor, before this
-        'derived type's field initializers have run.
+        'LakeUI 基类构造函数可能在本类字段初始化前触发布局。
         If _cells Is Nothing OrElse _dockStyles Is Nothing OrElse
            _columnStyles Is Nothing OrElse _rowStyles Is Nothing Then
             MyBase.OnLayout(levent)
             Return
         End If
-        'Bounds changes can synchronously re-enter layout. Do not let the native
-        'dock layout overwrite a partially applied grid during that re-entry.
+        '位置或尺寸变化可能同步触发布局重入，避免原生停靠布局覆盖尚未完成的网格布局。
         If _layingOut OrElse IsDisposed Then Return
 
         _layingOut = True
@@ -200,9 +191,8 @@ Friend NotInheritable Class GpuGridPanel
                 Padding.Top,
                 Math.Max(0, ClientSize.Width - Padding.Horizontal),
                 Math.Max(0, ClientSize.Height - Padding.Vertical))
-            'Do not resize retained child HWNDs to 0x0. The parent clips them while
-            'collapsed, and their already-presented transparent surfaces can be
-            'shown immediately when the row is expanded again.
+            '折叠时不将保留的子控件窗口缩为 0×0；父容器会裁剪其显示区域，
+            '再次展开时可以直接显示已经绘制好的透明背景。
             If _preserveChildBoundsWhenCollapsed AndAlso
                (content.Width <= 0 OrElse content.Height <= 0) Then Return
             Dim columnWidths = CalculateTracks(vertical:=False, _columnCount, _columnStyles, content.Width)
@@ -236,10 +226,9 @@ Friend NotInheritable Class GpuGridPanel
             Return MyBase.GetPreferredSize(proposedSize)
         End If
         Dim proposedContentWidth = Math.Max(0, proposedSize.Width - Padding.Horizontal)
-        'A proposed size is a constraint, not a minimum. In particular, summing
-        'the preferred widths of percentage columns creates an AutoSize feedback
-        'loop (1470 -> 5920 -> ...). Keep the proposed width and independently
-        'measure the row height required by the content.
+        '建议尺寸是布局约束，不是最小尺寸。累加百分比列的首选宽度会导致
+        'AutoSize 反馈循环，使宽度不断增大。保留传入的宽度约束，
+        '单独测量内容所需的行高。
         Dim preferredWidth = If(proposedContentWidth > 0,
                                 proposedContentWidth,
                                 CalculatePreferredAxis(vertical:=False, _columnCount, _columnStyles))
@@ -438,18 +427,16 @@ Friend NotInheritable Class GpuGridPanel
 End Class
 
 ''' <summary>
-''' Prevents LakeUI 5.5's non-editable combo box from retaining a caret scroll
-''' offset calculated at a narrow intermediate construction size. The base
-''' control resets that offset on resize only for non-left text alignment, so
-''' briefly use centered alignment while it recalculates and restore the visual
-''' left alignment before the queued GPU paint runs.
+''' 修正 LakeUI 5.5 非编辑下拉框在初始化尺寸过窄时残留文字滚动偏移的问题。
+''' 基类仅在非左对齐状态下随尺寸变化重置该偏移，因此重新计算时暂用居中对齐，
+''' 再在后续绘制前恢复左对齐，避免文字开头被裁掉。
 ''' </summary>
 Friend NotInheritable Class StableModernComboBox
     Inherits ModernComboBox
 
     Public Sub New()
-        'Match 3FUI's native dropdowns through LakeUI's public popup API.
-        'Auto samples the host backdrop; Overlay keeps the list in its GPU tree.
+        '使用 LakeUI 公开浮层接口，保持与 3FUI 原生下拉列表一致的样式。
+        '自动采样宿主背景，并以覆盖浮层显示半透明毛玻璃列表。
         DropDownMode = DropDownDisplayMode.Overlay
         DropDownBackdropMode = PopupBackdropMode.Auto
         DropDownBackdropBlurRadius = 30
@@ -478,9 +465,9 @@ Friend NotInheritable Class StableModernComboBox
 End Class
 
 ''' <summary>
-''' Horizontal flow container that remains part of the LakeUI GPU control tree.
+''' 基于 LakeUI ModernPanel 的横向流式布局容器，绘制仍由 LakeUI 负责。
 ''' </summary>
-Friend NotInheritable Class GpuFlowPanel
+Friend NotInheritable Class LayoutFlowPanel
     Inherits ModernPanel
 
     Public Sub New()

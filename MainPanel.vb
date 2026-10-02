@@ -58,8 +58,8 @@ Public NotInheritable Class MainPanel
     Private ReadOnly _tabControl As ModernTabControl
     Private ReadOnly _sampleEncodePanel As SampleEncodePanel
     Private ReadOnly ModernPanel1 As ModernPanel
-    Private _vmafModelRow As GpuGridPanel
-    Private _searchParametersLayout As GpuGridPanel
+    Private _vmafModelRow As LayoutGridPanel
+    Private _searchParametersLayout As LayoutGridPanel
     Private _searchFields As Control()
     Private _searchRootRowStyle As RowStyle
     Private _searchParameterRowsStyle As RowStyle
@@ -176,7 +176,7 @@ Public NotInheritable Class MainPanel
         'Bind its child controls directly to the stable root surface so LakeUI
         'registers an explicit dependency and immediately replaces any failed
         'background sample instead of leaving a cleared (black) swap-chain frame.
-        GpuBackgroundBinding.BindImmediateChildren(_vmafModelRow, ModernPanel1)
+        LayoutBackgroundBinding.BindImmediateChildren(_vmafModelRow, ModernPanel1)
         _fileList.BackgroundSource = ModernPanel1
         _sampleEncodePanel.BindPageBackgroundSource(ModernPanel1)
 
@@ -228,7 +228,7 @@ Public NotInheritable Class MainPanel
     End Sub
 
     Private Function BuildLayout() As Control
-        Dim root As New GpuGridPanel With {
+        Dim root As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 4,
@@ -252,7 +252,7 @@ Public NotInheritable Class MainPanel
     End Function
 
     Private Function BuildPathSection() As Control
-        Dim layout As New GpuGridPanel With {
+        Dim layout As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 5,
             .RowCount = 4,
@@ -270,7 +270,7 @@ Public NotInheritable Class MainPanel
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 48))
         layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 40))
 
-        Dim topBar As New GpuGridPanel With {
+        Dim topBar As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 2,
             .RowCount = 1,
@@ -322,7 +322,7 @@ Public NotInheritable Class MainPanel
     End Function
 
     Private Function BuildSearchSection() As Control
-        Dim layout As New GpuGridPanel With {
+        Dim layout As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 3,
@@ -340,7 +340,7 @@ Public NotInheritable Class MainPanel
         Dim heading = CreateSectionHeading("搜索参数", "选择 VMAF 或 XPSNR，设置目标分数、CRF 范围和采样方式")
         layout.Controls.Add(heading, 0, 0)
 
-        _searchParametersLayout = New GpuGridPanel With {
+        _searchParametersLayout = New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
             .Padding = Padding.Empty,
@@ -359,7 +359,7 @@ Public NotInheritable Class MainPanel
         AddHandler _searchParametersLayout.SizeChanged, AddressOf SearchParametersLayoutSizeChanged
         layout.Controls.Add(_searchParametersLayout, 0, 1)
 
-        _vmafModelRow = New GpuGridPanel With {
+        _vmafModelRow = New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 5,
             .RowCount = 1,
@@ -463,7 +463,7 @@ Public NotInheritable Class MainPanel
     End Sub
 
     Private Function BuildFileSection() As Control
-        Dim layout As New GpuGridPanel With {
+        Dim layout As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 3,
@@ -480,7 +480,7 @@ Public NotInheritable Class MainPanel
             0,
             0)
 
-        Dim toolbar As New GpuFlowPanel With {
+        Dim toolbar As New LayoutFlowPanel With {
             .Dock = DockStyle.Fill,
             .FlowDirection = ModernPanel.FlowDirectionEnum.LeftToRight,
             .WrapContents = False,
@@ -507,7 +507,7 @@ Public NotInheritable Class MainPanel
     End Function
 
     Private Function BuildFooter() As Control
-        Dim layout As New GpuGridPanel With {
+        Dim layout As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 3,
             .RowCount = 1,
@@ -641,7 +641,7 @@ Public NotInheritable Class MainPanel
     End Sub
 
     Private Shared Function CreateSearchField(caption As String, editor As Control) As Control
-        Dim layout As New GpuGridPanel With {
+        Dim layout As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 2,

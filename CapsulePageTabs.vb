@@ -5,9 +5,9 @@ Imports System.Windows.Forms
 Imports LakeUI
 
 ''' <summary>
-''' Adds a shared capsule track through LakeUI's public tab-strip image API.
-''' The native tab control still handles selection, keyboard navigation and
-''' bound-page GPU refreshes. Only the small decorative image is generated here.
+''' 通过 LakeUI 公开的标签栏背景图片接口，为标签页添加共用的胶囊底板。
+''' 选中状态、键盘导航和绑定页面的背景刷新仍由原生标签控件处理，
+''' 此处只生成标签栏的小幅装饰图片。
 ''' </summary>
 Friend NotInheritable Class CapsulePageTabs
     Inherits ModernTabControl
@@ -37,7 +37,7 @@ Friend NotInheritable Class CapsulePageTabs
     End Sub
 
     Public Sub UpdateCapsuleBackground()
-        'Base constructors can raise size/font events before Items is initialized.
+        '基类构造函数可能在 Items 初始化前触发尺寸或字体变化事件。
         If IsDisposed OrElse Items Is Nothing OrElse Items.Count = 0 OrElse ClientSize.Width <= 0 Then Return
 
         Dim scale = DeviceDpi / 96.0F
@@ -60,8 +60,8 @@ Friend NotInheritable Class CapsulePageTabs
             totalWidth += itemWidths(index)
         Next
 
-        'Use the same available strip width as the native tab layout, so the
-        'track and clickable tabs stay centered together after window resizes.
+        '使用与原生标签布局相同的可用宽度，确保窗口缩放后，
+        '胶囊底板与可点击的标签区域仍一起居中。
         Dim leftPadding = CInt(TabStripPadding.Left * scale)
         Dim rightPadding = CInt(TabStripPadding.Right * scale)
         Dim availableWidth = imageSize.Width - leftPadding - rightPadding
@@ -82,11 +82,11 @@ Friend NotInheritable Class CapsulePageTabs
             If index = SelectedIndex Then selectedBounds = New RectangleF(x, y, itemWidths(index), itemHeight)
             x += itemWidths(index) + TabItemSpacing * scale
         Next
-        'The selected pill is slightly taller than its track, like the reference.
+        '选中项的胶囊略高于底板，与参考样式保持一致。
         Dim trackBounds As New RectangleF(firstX, y + scale, totalWidth, itemHeight - scale * 2)
 
-        'Height-only page resizes need no new texture. A selection/font/DPI change
-        'only replaces this strip image once; hover animation remains native.
+        '仅改变页面高度时无需重建背景图片；选中项、字体或 DPI 变化时才替换图片。
+        '悬停动画仍由原生标签控件处理。
         If _stripImage IsNot Nothing AndAlso _stripImage.Size = imageSize AndAlso
            _trackBounds = trackBounds AndAlso _selectedBounds = selectedBounds Then Return
 
@@ -120,8 +120,8 @@ Friend NotInheritable Class CapsulePageTabs
         _stripImage = nextImage
         _trackBounds = trackBounds
         _selectedBounds = selectedBounds
-        'Match the whole strip's pixel size so LakeUI's center-crop image mode
-        'keeps the capsule at the intended size rather than stretching it.
+        '背景图片与整个标签栏使用相同的像素尺寸，避免 LakeUI 居中裁剪图片时
+        '意外拉伸胶囊，保证显示尺寸与布局计算一致。
         TabStripBackgroundImage = nextImage
         previousImage?.Dispose()
     End Sub
