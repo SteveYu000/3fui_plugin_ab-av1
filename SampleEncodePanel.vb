@@ -289,8 +289,9 @@ Friend NotInheritable Class SampleEncodePanel
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 140))
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 140))
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 300))
-        Dim modelCaption = CreateFieldLabel("VMAF 模型")
+        Dim modelCaption = CreateSectionHeading("VMAF 模型", String.Empty)
         modelCaption.AutoSize = False
+        modelCaption.Margin = New Padding(0, 5, 0, 5)
         modelCaption.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         _vmafModelRow.Controls.Add(modelCaption, 0, 0)
         _vmafModel.Margin = New Padding(0, 5, 12, 5)
@@ -1371,7 +1372,8 @@ Friend NotInheritable Class SampleEncodePanel
             .BackColor1 = Color.Transparent,
             .BorderSize = 0,
             .ForeColor = ColorMuted,
-            .Text = $"<span style=""font-size:13; color:Silver"">{title}</span>   {description}",
+            .Text = $"<span style=""font-size:13; color:Silver"">{title}</span>" &
+                    If(String.IsNullOrEmpty(description), String.Empty, "   " & description),
             .TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         }
     End Function
