@@ -21,11 +21,11 @@ Public NotInheritable Class MainPanel
     Private Shared ReadOnly ColorWarning As Color = Color.FromArgb(232, 177, 74)
     Private Shared ReadOnly ColorDanger As Color = Color.FromArgb(235, 93, 93)
     Private Const ProgressRenderIntervalMilliseconds As Integer = 80
-    Private Const SearchHeadingHeight As Single = 44.0F
-    Private Const SearchParameterRowHeight As Single = 82.0F
-    Private Const SearchModelHeight As Single = 74.0F
+    Private Const SearchHeadingHeight As Single = 32.0F
+    Private Const SearchParameterRowHeight As Single = 66.0F
+    Private Const SearchModelHeight As Single = 56.0F
     Private Const SearchVerticalPadding As Single = 20.0F
-    Private Const CompactSearchWidth As Single = 1180.0F
+    Private Const CompactSearchWidth As Single = 840.0F
 
     Private ReadOnly _presetPath As ModernTextBox
     Private ReadOnly _outputDirectory As ModernTextBox
@@ -91,7 +91,6 @@ Public NotInheritable Class MainPanel
         _detailFont = New Font("Microsoft YaHei UI", 8.5F)
         Dock = DockStyle.Fill
         AllowDrop = True
-        MinimumSize = New Size(900, 720)
         Padding = Padding.Empty
 
         _presetPath = CreateTextBox("选择 FFmpegFreeUI v6 JSON 预设")
@@ -109,6 +108,7 @@ Public NotInheritable Class MainPanel
         _vmafModel = CreateComboBox("留空使用 ab-av1 自动模型；也可直接输入模型名称")
 
         _thorough = New ModernCheckBox With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Text = "彻底搜索",
             .SubText = "搜索到更贴近目标值",
             .ForeColor = ColorText,
@@ -116,7 +116,7 @@ Public NotInheritable Class MainPanel
             .Checked = False,
             .ClickAnywhere = True,
             .Dock = DockStyle.Fill,
-            .Margin = New Padding(10, 4, 0, 4)
+            .Margin = New Padding(8, 4, 0, 4)
         }
 
         _fileList = CreateFileList()
@@ -127,11 +127,12 @@ Public NotInheritable Class MainPanel
         _status = CreateLabel("就绪", ColorMuted, 9.0F)
 
         _progressRing = New ProgressRing With {
-            .Size = New Size(30, 30),
+            .AutoScaleMode = AutoScaleMode.Inherit,
+            .Size = New Size(24, 24),
             .RingColor = ColorAccent,
             .AutoStart = False,
             .Visible = False,
-            .Margin = New Padding(2, 8, 10, 8)
+            .Margin = New Padding(2, 14, 6, 14)
         }
 
         _addFilesButton = CreateButton("添加媒体", AddressOf AddFiles)
@@ -161,7 +162,7 @@ Public NotInheritable Class MainPanel
             .Name = "ModernPanel1",
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
-            .Padding = New Padding(24, 20, 24, 18),
+            .Padding = New Padding(20, 12, 20, 12),
             .BackColor = Color.Transparent,
             .BackColor1 = ColorBackground,
             .BorderSize = 0,
@@ -201,6 +202,10 @@ Public NotInheritable Class MainPanel
         RefreshPresetSummary()
         UpdateScoreMetricUi(adjustDefaultScore:=False)
         RefreshActionButtons()
+        '与原生 Designer 一样，完整创建控件树后再启用 96 DPI 自动缩放。
+        '若提前启用，初始化中的布局会更新缩放基准，后建的控件便漏掉首次缩放。
+        AutoScaleDimensions = New SizeF(LayoutMetrics.BaseDpi, LayoutMetrics.BaseDpi)
+        AutoScaleMode = AutoScaleMode.Dpi
         ModernPanel1.ResumeLayout(False)
         ResumeLayout(False)
     End Sub
@@ -237,11 +242,11 @@ Public NotInheritable Class MainPanel
             .BackColor = Color.Transparent
         }
         root.SuspendLayout()
-        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 184))
-        _searchRootRowStyle = New RowStyle(SizeType.Absolute, 220)
+        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 148))
+        _searchRootRowStyle = New RowStyle(SizeType.Absolute, 174)
         root.RowStyles.Add(_searchRootRowStyle)
         root.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
-        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 68))
+        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 52))
 
         root.Controls.Add(BuildPathSection(), 0, 0)
         root.Controls.Add(BuildSearchSection(), 0, 1)
@@ -260,15 +265,15 @@ Public NotInheritable Class MainPanel
             .BackColor = Color.Transparent
         }
         layout.SuspendLayout()
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 150))
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 12))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 108))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 8))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 12))
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 180))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 48))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 48))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 40))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 8))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 120))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 32))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 42))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 42))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 28))
 
         Dim topBar As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
@@ -297,13 +302,13 @@ Public NotInheritable Class MainPanel
         Dim browseOutputButton = CreateButton("输出目录", AddressOf BrowseOutputDirectory)
         browsePresetButton.Dock = DockStyle.Fill
         browseOutputButton.Dock = DockStyle.Fill
-        browsePresetButton.Margin = New Padding(0, 6, 12, 6)
-        browseOutputButton.Margin = New Padding(0, 6, 12, 6)
+        browsePresetButton.Margin = New Padding(0, 5, 8, 5)
+        browseOutputButton.Margin = New Padding(0, 5, 8, 5)
 
         layout.Controls.Add(browsePresetButton, 0, 1)
         layout.Controls.Add(_presetPath, 2, 1)
         _copyCommandLineButton.Dock = DockStyle.Fill
-        _copyCommandLineButton.Margin = New Padding(0, 6, 0, 6)
+        _copyCommandLineButton.Margin = New Padding(0, 5, 0, 5)
         layout.Controls.Add(_copyCommandLineButton, 4, 1)
         layout.Controls.Add(browseOutputButton, 0, 2)
         layout.Controls.Add(_outputDirectory, 2, 2)
@@ -369,23 +374,23 @@ Public NotInheritable Class MainPanel
             .PreserveChildBoundsWhenCollapsed = True
         }
         _vmafModelRow.SuspendLayout()
-        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 150))
+        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 100))
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
-        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 140))
-        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 140))
-        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 300))
+        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 96))
+        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 96))
+        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 180))
 
         Dim modelCaption = CreateSectionHeading("VMAF 模型", String.Empty)
         modelCaption.AutoSize = False
         modelCaption.Margin = New Padding(0, 5, 0, 5)
         modelCaption.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         _vmafModelRow.Controls.Add(modelCaption, 0, 0)
-        _vmafModel.Margin = New Padding(0, 5, 12, 5)
+        _vmafModel.Margin = New Padding(0, 5, 8, 5)
         _vmafModelRow.Controls.Add(_vmafModel, 1, 0)
         _refreshModelsButton.Dock = DockStyle.Fill
         _browseModelButton.Dock = DockStyle.Fill
-        _refreshModelsButton.Margin = New Padding(0, 5, 12, 5)
-        _browseModelButton.Margin = New Padding(0, 5, 12, 5)
+        _refreshModelsButton.Margin = New Padding(0, 5, 8, 5)
+        _browseModelButton.Margin = New Padding(0, 5, 8, 5)
         _vmafModelRow.Controls.Add(_refreshModelsButton, 2, 0)
         _vmafModelRow.Controls.Add(_browseModelButton, 3, 0)
         _vmafModelStatus.Dock = DockStyle.Fill
@@ -400,7 +405,9 @@ Public NotInheritable Class MainPanel
 
     Private Sub SearchParametersLayoutSizeChanged(sender As Object, e As EventArgs)
         If _searchParametersLayout Is Nothing OrElse _searchParametersLayout.ClientSize.Width <= 0 Then Return
-        ConfigureSearchParameterLayout(_searchParametersLayout.ClientSize.Width < CompactSearchWidth)
+        '断点按逻辑宽度判断，避免同样大小的窗口在 100%/150% 下采用不同布局。
+        ConfigureSearchParameterLayout(_searchParametersLayout.ClientSize.Width <
+                                       CompactSearchWidth * LayoutMetrics.DpiScale(_searchParametersLayout))
     End Sub
 
     Private Sub ConfigureSearchParameterLayout(compact As Boolean, Optional force As Boolean = False)
@@ -409,7 +416,8 @@ Public NotInheritable Class MainPanel
 
         _searchParametersLayout.SuspendLayout()
         Try
-            _searchParametersLayout.Controls.Clear()
+            '只更新单元格，不移除再添加控件，避免 ParentChanged 触发额外的继承缩放。
+            '同时保持 LakeUI 绘制表面与背景依赖稳定。
             _searchParametersLayout.ColumnStyles.Clear()
             _searchParametersLayout.RowStyles.Clear()
 
@@ -467,12 +475,12 @@ Public NotInheritable Class MainPanel
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 3,
-            .Padding = New Padding(0, 0, 0, 10),
+            .Padding = New Padding(0, 0, 0, 8),
             .BackColor = Color.Transparent
         }
         layout.SuspendLayout()
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 46))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 60))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 32))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
         layout.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
 
         layout.Controls.Add(
@@ -489,14 +497,14 @@ Public NotInheritable Class MainPanel
         }
         toolbar.SuspendLayout()
         For Each button In {_addFilesButton, _stopButton, _pauseResumeButton, _removeButton, _resetButton}
-            button.Size = New Size(132, 42)
-            button.Margin = New Padding(0, 9, 12, 9)
+            button.Size = New Size(100, 32)
+            button.Margin = New Padding(0, 6, 8, 6)
             toolbar.Controls.Add(button)
         Next
 
         Dim hint = CreateLabel("选择任务后操作；未选择时【停止/暂停】作用于当前任务", ColorMuted, 9.0F)
         hint.AutoSize = True
-        hint.Margin = New Padding(10, 19, 0, 0)
+        hint.Margin = New Padding(8, 12, 0, 0)
         toolbar.Controls.Add(hint)
         toolbar.ResumeLayout(False)
 
@@ -515,13 +523,14 @@ Public NotInheritable Class MainPanel
             .Margin = Padding.Empty
         }
         layout.SuspendLayout()
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 44))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 32))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 250))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 180))
 
         _status.Dock = DockStyle.Fill
         _status.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         _startButton.Dock = DockStyle.Fill
+        _startButton.Margin = New Padding(0, 8, 0, 8)
         layout.Controls.Add(_progressRing, 0, 0)
         layout.Controls.Add(_status, 1, 0)
         layout.Controls.Add(_startButton, 2, 0)
@@ -541,6 +550,7 @@ Public NotInheritable Class MainPanel
         'child surfaces from the previous tab visible until incidental paints
         'eventually replace them, which presents as several seconds of flashing.
         Dim tabs As New CapsulePageTabs With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
             .Padding = Padding.Empty,
@@ -646,13 +656,13 @@ Public NotInheritable Class MainPanel
             .ColumnCount = 1,
             .RowCount = 2,
             .BackColor = Color.Transparent,
-            .Margin = New Padding(0, 0, 10, 0),
+            .Margin = New Padding(0, 0, 8, 0),
             .Padding = Padding.Empty
         }
         layout.SuspendLayout()
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 28))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 50))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 20))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 42))
         Dim label = CreateFieldLabel(caption)
         label.TextAlign = HtmlColorLabel.TextAlignEnum.BottomLeft
         layout.Controls.Add(label, 0, 0)
@@ -1556,6 +1566,7 @@ Public NotInheritable Class MainPanel
 
     Private Shared Function CreateTextBox(waterText As String) As ModernTextBox
         Return New ModernTextBox With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Dock = DockStyle.Fill,
             .Margin = New Padding(0, 5, 0, 5),
             .Padding = New Padding(10, 0, 10, 0),
@@ -1613,6 +1624,7 @@ Public NotInheritable Class MainPanel
                               Color.FromArgb(140, 71, 156, 255),
                               If(danger, Color.FromArgb(80, 235, 93, 93), ColorControlPressed))
         Dim button As New ModernButton With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Text = text,
             .Font = New Font("Microsoft YaHei UI", 10.0F),
             .ForeColor = If(danger, ColorDanger, ColorText),
@@ -1626,8 +1638,8 @@ Public NotInheritable Class MainPanel
             .HoverBorderColor = Color.Transparent,
             .BorderSize = 0,
             .BorderRadius = 10,
-            .Size = New Size(160, 38),
-            .Margin = New Padding(0, 6, 12, 6)
+            .Size = New Size(108, 32),
+            .Margin = New Padding(0, 5, 8, 5)
         }
         AddHandler button.Click, handler
         Return button
@@ -1637,6 +1649,7 @@ Public NotInheritable Class MainPanel
         'Draw the rounded task card on the list's own GPU surface, including
         'the empty area. A transparent header avoids a second rectangular fill.
         Dim list As New UltraDetailListView With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
             .BackgroundColor = ColorControl,
@@ -1671,15 +1684,19 @@ Public NotInheritable Class MainPanel
             .Font = New Font("Microsoft YaHei UI", 10.0F)
         }
         list.Columns.Add(New UltraDetailListView.ListColumn("文件", 520))
-        list.Columns.Add(New UltraDetailListView.ListColumn("状态", 110))
-        list.Columns.Add(New UltraDetailListView.ListColumn("CRF", 80))
-        list.Columns.Add(New UltraDetailListView.ListColumn("分数", 130))
-        list.Columns.Add(New UltraDetailListView.ListColumn("预测大小", 130))
+        list.Columns.Add(New UltraDetailListView.ListColumn("状态", 80))
+        list.Columns.Add(New UltraDetailListView.ListColumn("CRF", 56))
+        list.Columns.Add(New UltraDetailListView.ListColumn("分数", 88))
+        list.Columns.Add(New UltraDetailListView.ListColumn("预测大小", 100))
+        Dim fitColumns As EventHandler = Sub(sender, e) LayoutMetrics.FitTaskColumns(list, {80, 56, 88, 100})
+        AddHandler list.SizeChanged, fitColumns
+        AddHandler list.DpiChangedAfterParent, fitColumns
         Return list
     End Function
 
     Private Shared Function CreateSectionHeading(title As String, description As String) As HtmlColorLabel
         Return New HtmlColorLabel With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
             .Padding = Padding.Empty,
@@ -1705,6 +1722,7 @@ Public NotInheritable Class MainPanel
                                         size As Single,
                                         Optional style As FontStyle = FontStyle.Regular) As HtmlColorLabel
         Return New HtmlColorLabel With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Text = text,
             .ForeColor = color,
             .BackColor = Color.Transparent,

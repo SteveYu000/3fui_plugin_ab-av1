@@ -4,6 +4,41 @@ Imports System.ComponentModel
 Imports System.Windows.Forms
 Imports LakeUI
 
+Friend Module LayoutMetrics
+    Public Const BaseDpi As Single = 96.0F
+
+    Public Function DpiScale(control As Control) As Single
+        Return control.DeviceDpi / BaseDpi
+    End Function
+
+    ''' <summary>
+    ''' 与 3FUI 原生列表一样，按 DPI 缩放结果列，让文件列占用剩余宽度。
+    ''' LakeUI 的列宽使用实际像素，不能直接沿用网格中的逻辑尺寸。
+    ''' </summary>
+    Public Sub FitTaskColumns(list As UltraDetailListView, resultWidths As Integer())
+        If list.IsDisposed OrElse list.ClientSize.Width <= 0 OrElse
+           list.Columns.Count <> resultWidths.Length + 1 Then Return
+
+        Dim scale = DpiScale(list)
+        Dim widths = resultWidths.Select(Function(width) CInt(Math.Round(width * scale))).ToArray()
+        Dim fileWidth = Math.Max(CInt(Math.Round(160 * scale)),
+                                list.ClientSize.Width - list.Padding.Horizontal -
+                                CInt(Math.Round(24 * scale)) - widths.Sum())
+        If list.Columns(0).Width = fileWidth AndAlso
+           Enumerable.Range(0, widths.Length).All(Function(index) list.Columns(index + 1).Width = widths(index)) Then Return
+
+        list.BeginUpdate()
+        Try
+            list.Columns(0).Width = fileWidth
+            For index = 0 To widths.Length - 1
+                list.Columns(index + 1).Width = widths(index)
+            Next
+        Finally
+            list.EndUpdate()
+        End Try
+    End Sub
+End Module
+
 Friend Module LayoutBackgroundBinding
     ''' <summary>
     ''' 通过 LakeUI 的公开 BackgroundSource 属性，将控件绑定到稳定的外层底板。
@@ -67,6 +102,8 @@ Friend NotInheritable Class LayoutGridPanel
     Private _preserveChildBoundsWhenCollapsed As Boolean
 
     Public Sub New()
+        '覆盖 JustEmptyControl 默认的 Font 缩放，统一继承页面的 DPI 缩放。
+        AutoScaleMode = AutoScaleMode.Inherit
         BackColor = Color.Transparent
         Margin = Padding.Empty
         Padding = Padding.Empty
@@ -173,6 +210,11 @@ Friend NotInheritable Class LayoutGridPanel
         MyBase.OnControlRemoved(e)
     End Sub
 
+    Protected Overrides Sub OnDpiChangedAfterParent(e As EventArgs)
+        MyBase.OnDpiChangedAfterParent(e)
+        PerformLayout()
+    End Sub
+
     Protected Overrides Sub OnLayout(levent As LayoutEventArgs)
         'LakeUI 基类构造函数可能在本类字段初始化前触发布局。
         If _cells Is Nothing OrElse _dockStyles Is Nothing OrElse
@@ -259,7 +301,7 @@ Friend NotInheritable Class LayoutGridPanel
             Dim sizeType = GetSizeType(styles, index)
             Select Case sizeType
                 Case SizeType.Absolute
-                    result(index) = Math.Max(0, CInt(Math.Round(GetStyleSize(styles, index))))
+                    result(index) = ScaleTrackSize(GetStyleSize(styles, index))
                     fixedTotal += result(index)
                 Case SizeType.AutoSize
                     result(index) = MeasureAutoTrack(index, vertical)
@@ -307,7 +349,7 @@ Friend NotInheritable Class LayoutGridPanel
         For index = 0 To Math.Max(1, count) - 1
             Select Case GetSizeType(styles, index)
                 Case SizeType.Absolute
-                    total += Math.Max(0, CInt(Math.Round(GetStyleSize(styles, index))))
+                    total += ScaleTrackSize(GetStyleSize(styles, index))
                 Case SizeType.AutoSize
                     total += MeasureAutoTrack(index, vertical)
                 Case SizeType.Percent
@@ -315,6 +357,11 @@ Friend NotInheritable Class LayoutGridPanel
             End Select
         Next
         Return total
+    End Function
+
+    Private Function ScaleTrackSize(logicalSize As Single) As Integer
+        '行列样式始终保存 96 DPI 的逻辑尺寸，布局时才转换，避免反复缩放累积。
+        Return Math.Max(0, CInt(Math.Round(logicalSize * LayoutMetrics.DpiScale(Me))))
     End Function
 
     Private Function MeasureAutoTrack(index As Integer, vertical As Boolean) As Integer
@@ -435,6 +482,8 @@ Friend NotInheritable Class StableModernComboBox
     Inherits ModernComboBox
 
     Public Sub New()
+        '不使用 ModernComboBox 自带的 120 DPI 设计基准，由页面统一缩放。
+        AutoScaleMode = AutoScaleMode.Inherit
         '使用 LakeUI 公开浮层接口，保持与 3FUI 原生下拉列表一致的样式。
         '自动采样宿主背景，并以覆盖浮层显示半透明毛玻璃列表。
         DropDownMode = DropDownDisplayMode.Overlay

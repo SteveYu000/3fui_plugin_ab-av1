@@ -119,6 +119,12 @@ dotnet restore .\FFmpegFreeUI.AbAv1.vbproj
 dotnet build .\FFmpegFreeUI.AbAv1.vbproj -c Release --no-restore
 ```
 
+布局回归检查覆盖两个页面、评分指标切换、大小窗口及反复跨过换行断点；不显示窗口、不启动编码任务、不修改系统显示设置。分别检查 100% 的控件几何布局和当前显示器的实际 DPI：
+
+```powershell
+dotnet run --project .\tests\LayoutRegression\LayoutRegression.csproj -c Release -- --100
+dotnet run --project .\tests\LayoutRegression\LayoutRegression.csproj -c Release --no-restore
+```
 
 ## 当前限制
 

@@ -94,11 +94,12 @@ Friend NotInheritable Class SampleEncodePanel
         _status = CreateLabel("就绪", ColorMuted, 9.0F)
 
         _progressRing = New ProgressRing With {
-            .Size = New Size(30, 30),
+            .AutoScaleMode = AutoScaleMode.Inherit,
+            .Size = New Size(24, 24),
             .RingColor = ColorAccent,
             .AutoStart = False,
             .Visible = False,
-            .Margin = New Padding(2, 8, 10, 8)
+            .Margin = New Padding(2, 14, 6, 14)
         }
 
         _addFilesButton = CreateButton("添加媒体", AddressOf AddFiles)
@@ -137,6 +138,10 @@ Friend NotInheritable Class SampleEncodePanel
         RefreshPresetSummary()
         UpdateScoreMetricUi()
         RefreshActionButtons()
+        '绑定页面由标签控件按需加入控件树，因此必须有自己的 DPI 缩放基准。
+        '与主页面一样，在完整创建控件后启用缩放，内部控件只继承这一次缩放。
+        AutoScaleDimensions = New SizeF(LayoutMetrics.BaseDpi, LayoutMetrics.BaseDpi)
+        AutoScaleMode = AutoScaleMode.Dpi
         ResumeLayout(False)
     End Sub
 
@@ -176,10 +181,10 @@ Friend NotInheritable Class SampleEncodePanel
             .BackColor = Color.Transparent
         }
         root.SuspendLayout()
-        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 140))
+        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 106))
         root.RowStyles.Add(New RowStyle(SizeType.AutoSize))
         root.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
-        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 68))
+        root.RowStyles.Add(New RowStyle(SizeType.Absolute, 52))
         root.Controls.Add(BuildPathSection(), 0, 0)
         root.Controls.Add(BuildSettingsSection(), 0, 1)
         root.Controls.Add(BuildFileSection(), 0, 2)
@@ -197,14 +202,14 @@ Friend NotInheritable Class SampleEncodePanel
             .BackColor = Color.Transparent
         }
         layout.SuspendLayout()
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 150))
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 12))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 108))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 8))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 12))
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 180))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 52))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 40))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 8))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 120))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 32))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 42))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 28))
 
         Dim topBar As New LayoutGridPanel With {
             .Dock = DockStyle.Fill,
@@ -230,11 +235,11 @@ Friend NotInheritable Class SampleEncodePanel
 
         Dim browsePresetButton = CreateButton("选择预设", AddressOf BrowsePreset)
         browsePresetButton.Dock = DockStyle.Fill
-        browsePresetButton.Margin = New Padding(0, 6, 12, 6)
+        browsePresetButton.Margin = New Padding(0, 5, 8, 5)
         layout.Controls.Add(browsePresetButton, 0, 1)
         layout.Controls.Add(_presetPath, 2, 1)
         _copyCommandLineButton.Dock = DockStyle.Fill
-        _copyCommandLineButton.Margin = New Padding(0, 6, 0, 6)
+        _copyCommandLineButton.Margin = New Padding(0, 5, 0, 5)
         layout.Controls.Add(_copyCommandLineButton, 4, 1)
 
         Dim summaryCaption = CreateLabel("当前预设", ColorMuted, 9.5F)
@@ -262,9 +267,9 @@ Friend NotInheritable Class SampleEncodePanel
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 18.0F))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 36.0F))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 28.0F))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 82))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 74))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 32))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 66))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 56))
         _modelRowStyle = layout.RowStyles(2)
 
         Dim heading = CreateSectionHeading("样本参数", "指定 CRF、评分指标和采样方式；每个文件独立生成预测结果")
@@ -285,22 +290,22 @@ Friend NotInheritable Class SampleEncodePanel
             .PreserveChildBoundsWhenCollapsed = True
         }
         _vmafModelRow.SuspendLayout()
-        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 150))
+        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 100))
         _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
-        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 140))
-        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 140))
-        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 300))
+        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 96))
+        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 96))
+        _vmafModelRow.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 180))
         Dim modelCaption = CreateSectionHeading("VMAF 模型", String.Empty)
         modelCaption.AutoSize = False
         modelCaption.Margin = New Padding(0, 5, 0, 5)
         modelCaption.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         _vmafModelRow.Controls.Add(modelCaption, 0, 0)
-        _vmafModel.Margin = New Padding(0, 5, 12, 5)
+        _vmafModel.Margin = New Padding(0, 5, 8, 5)
         _vmafModelRow.Controls.Add(_vmafModel, 1, 0)
         _refreshModelsButton.Dock = DockStyle.Fill
         _browseModelButton.Dock = DockStyle.Fill
-        _refreshModelsButton.Margin = New Padding(0, 5, 12, 5)
-        _browseModelButton.Margin = New Padding(0, 5, 12, 5)
+        _refreshModelsButton.Margin = New Padding(0, 5, 8, 5)
+        _browseModelButton.Margin = New Padding(0, 5, 8, 5)
         _vmafModelRow.Controls.Add(_refreshModelsButton, 2, 0)
         _vmafModelRow.Controls.Add(_browseModelButton, 3, 0)
         _vmafModelStatus.Dock = DockStyle.Fill
@@ -318,12 +323,12 @@ Friend NotInheritable Class SampleEncodePanel
             .Dock = DockStyle.Fill,
             .ColumnCount = 1,
             .RowCount = 3,
-            .Padding = New Padding(0, 0, 0, 10),
+            .Padding = New Padding(0, 0, 0, 8),
             .BackColor = Color.Transparent
         }
         layout.SuspendLayout()
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 46))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 60))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 32))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
         layout.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
         layout.Controls.Add(
             CreateSectionHeading("样本任务", "运行中仍可拖入或添加文件；新任务会进入当前等待队列"),
@@ -339,13 +344,13 @@ Friend NotInheritable Class SampleEncodePanel
         }
         toolbar.SuspendLayout()
         For Each button In {_addFilesButton, _stopButton, _pauseResumeButton, _removeButton, _resetButton}
-            button.Size = New Size(132, 42)
-            button.Margin = New Padding(0, 9, 12, 9)
+            button.Size = New Size(100, 32)
+            button.Margin = New Padding(0, 6, 8, 6)
             toolbar.Controls.Add(button)
         Next
         Dim hint = CreateLabel("选择任务后操作；未选择时【停止/暂停】作用于当前任务", ColorMuted, 9.0F)
         hint.AutoSize = True
-        hint.Margin = New Padding(10, 19, 0, 0)
+        hint.Margin = New Padding(8, 12, 0, 0)
         toolbar.Controls.Add(hint)
         toolbar.ResumeLayout(False)
         layout.Controls.Add(toolbar, 0, 1)
@@ -363,12 +368,13 @@ Friend NotInheritable Class SampleEncodePanel
             .Margin = Padding.Empty
         }
         layout.SuspendLayout()
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 44))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 32))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
-        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 250))
+        layout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 180))
         _status.Dock = DockStyle.Fill
         _status.TextAlign = HtmlColorLabel.TextAlignEnum.MiddleLeft
         _startButton.Dock = DockStyle.Fill
+        _startButton.Margin = New Padding(0, 8, 0, 8)
         layout.Controls.Add(_progressRing, 0, 0)
         layout.Controls.Add(_status, 1, 0)
         layout.Controls.Add(_startButton, 2, 0)
@@ -382,13 +388,13 @@ Friend NotInheritable Class SampleEncodePanel
             .ColumnCount = 1,
             .RowCount = 2,
             .BackColor = Color.Transparent,
-            .Margin = New Padding(0, 0, 10, 0),
+            .Margin = New Padding(0, 0, 8, 0),
             .Padding = Padding.Empty
         }
         layout.SuspendLayout()
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 28))
-        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 50))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 20))
+        layout.RowStyles.Add(New RowStyle(SizeType.Absolute, 42))
         Dim label = CreateFieldLabel(caption)
         label.TextAlign = HtmlColorLabel.TextAlignEnum.BottomLeft
         layout.Controls.Add(label, 0, 0)
@@ -476,7 +482,7 @@ Friend NotInheritable Class SampleEncodePanel
     Private Sub UpdateScoreMetricUi()
         If _vmafModelRow Is Nothing OrElse _modelRowStyle Is Nothing Then Return
         Dim showModel = GetSelectedMetric() = QualityMetric.Vmaf
-        _modelRowStyle.Height = If(showModel, 74.0F, 0.0F)
+        _modelRowStyle.Height = If(showModel, 56.0F, 0.0F)
         _vmafModel.Enabled = showModel AndAlso Not _running
         _refreshModelsButton.Enabled = showModel AndAlso Not _running AndAlso Not _scanningModels
         _browseModelButton.Enabled = showModel AndAlso Not _running
@@ -1235,6 +1241,7 @@ Friend NotInheritable Class SampleEncodePanel
 
     Private Shared Function CreateTextBox(waterText As String) As ModernTextBox
         Return New ModernTextBox With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Dock = DockStyle.Fill,
             .Margin = New Padding(0, 5, 0, 5),
             .Padding = New Padding(10, 0, 10, 0),
@@ -1301,6 +1308,7 @@ Friend NotInheritable Class SampleEncodePanel
                               Color.FromArgb(140, 71, 156, 255),
                               If(danger, Color.FromArgb(80, 235, 93, 93), ColorControlPressed))
         Dim button As New ModernButton With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Text = text,
             .Font = New Font("Microsoft YaHei UI", 10.0F),
             .ForeColor = If(danger, ColorDanger, ColorText),
@@ -1314,8 +1322,8 @@ Friend NotInheritable Class SampleEncodePanel
             .HoverBorderColor = Color.Transparent,
             .BorderSize = 0,
             .BorderRadius = 10,
-            .Size = New Size(160, 38),
-            .Margin = New Padding(0, 6, 12, 6)
+            .Size = New Size(108, 32),
+            .Margin = New Padding(0, 5, 8, 5)
         }
         AddHandler button.Click, handler
         Return button
@@ -1324,6 +1332,7 @@ Friend NotInheritable Class SampleEncodePanel
     Private Shared Function CreateFileList() As UltraDetailListView
         'Keep the translucent rounded card and its header in one GPU surface.
         Dim list As New UltraDetailListView With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
             .BackgroundColor = ColorControl,
@@ -1358,16 +1367,20 @@ Friend NotInheritable Class SampleEncodePanel
             .Font = New Font("Microsoft YaHei UI", 10.0F)
         }
         list.Columns.Add(New UltraDetailListView.ListColumn("文件", 480))
-        list.Columns.Add(New UltraDetailListView.ListColumn("状态", 120))
-        list.Columns.Add(New UltraDetailListView.ListColumn("CRF", 80))
-        list.Columns.Add(New UltraDetailListView.ListColumn("分数", 130))
-        list.Columns.Add(New UltraDetailListView.ListColumn("预测大小", 130))
-        list.Columns.Add(New UltraDetailListView.ListColumn("预测耗时", 130))
+        list.Columns.Add(New UltraDetailListView.ListColumn("状态", 80))
+        list.Columns.Add(New UltraDetailListView.ListColumn("CRF", 56))
+        list.Columns.Add(New UltraDetailListView.ListColumn("分数", 88))
+        list.Columns.Add(New UltraDetailListView.ListColumn("预测大小", 100))
+        list.Columns.Add(New UltraDetailListView.ListColumn("预测耗时", 100))
+        Dim fitColumns As EventHandler = Sub(sender, e) LayoutMetrics.FitTaskColumns(list, {80, 56, 88, 100, 100})
+        AddHandler list.SizeChanged, fitColumns
+        AddHandler list.DpiChangedAfterParent, fitColumns
         Return list
     End Function
 
     Private Shared Function CreateSectionHeading(title As String, description As String) As HtmlColorLabel
         Return New HtmlColorLabel With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Dock = DockStyle.Fill,
             .Margin = Padding.Empty,
             .Padding = Padding.Empty,
@@ -1393,6 +1406,7 @@ Friend NotInheritable Class SampleEncodePanel
                                         size As Single,
                                         Optional style As FontStyle = FontStyle.Regular) As HtmlColorLabel
         Return New HtmlColorLabel With {
+            .AutoScaleMode = AutoScaleMode.Inherit,
             .Text = text,
             .ForeColor = color,
             .BackColor = Color.Transparent,
